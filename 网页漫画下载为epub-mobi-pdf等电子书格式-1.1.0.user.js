@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         网页漫画下载为epub/mobi/pdf等电子书格式
 // @namespace    http://tampermonkey.net/
-// @version      1.5.0
+// @version      1.5.2
 // @description  将网页漫画下载下来方便导入墨水屏电子书进行阅读，目前仅适用于如漫画(https://m.rumanhua.com/)
 // @author       MornLight
 // @match        https://m.rumanhua.com/*
@@ -10,7 +10,7 @@
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js
 // @run-at       document-end
 // @license      MIT
-// @supportURL   https://duanmorningsir.github.io/
+// @supportURL   https://github.com/duanmorningsir/ComicDownloader
 // ==/UserScript==
 
 (function () {
@@ -64,7 +64,7 @@
             try {
                 this.ui.setLoading(true);
                 await this.downloadComic(startPage, endPage);
-                alert(`漫画《${this.chapterName}》第${startPage}至${endPage}页下载完成！`);
+                // alert(`漫画《${this.chapterName}》第${startPage}至${endPage}页下载完成！`);
             } catch (error) {
                 console.error('下载失败:', error);
                 alert('下载失败，请查看控制台了解详情');
