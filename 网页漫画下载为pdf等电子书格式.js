@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         网页漫画下载为pdf格式
 // @namespace    http://tampermonkey.net/
-// @version      1.7
+// @version      1.7.1
 
 // @description  将网页漫画下载下来方便导入墨水屏电子书进行阅读，目前仅适用于如漫画(https://m.rumanhua.com/)
 // @author       MornLight
@@ -22,7 +22,7 @@
     const STYLES = {
         container: {
             position: 'fixed',
-            
+
             bottom: '20px',
             right: '20px',
             zIndex: '1000',
@@ -256,9 +256,6 @@
         async generatePDF(images) {
             const pdf = new jspdf.jsPDF();
 
-            // 存储所有图片的尺寸
-            const imageSizes = [];
-
             // 获取所有图片的尺寸
             const getImageSize = (imgData) => {
                 return new Promise((resolve) => {
@@ -273,37 +270,33 @@
             // 获取所有图片的尺寸
             const sizes = await Promise.all(images.map(getImageSize));
 
-            // 找到最大宽度和高度
-            let maxWidth = 0;
-            let maxHeight = 0;
-            let A4_width = 210;
-            sizes.forEach(size => {
-                if (size.width > maxWidth) maxWidth = A4_width;
-                if (size.height > maxHeight) maxHeight = size.height / size.width * A4_width;
-            });
-
-            // 设置 PDF 页面的尺寸为最大尺寸
-            const setPageSize = () => {
-                pdf.setProperties({
-                    orientation: maxWidth > maxHeight ? 'landscape' : 'portrait'
-                });
-                pdf.internal.pageSize.width = maxWidth;
-                pdf.internal.pageSize.height = maxHeight;
-            };
-
-            setPageSize(); // 初始设置页面尺寸
-
-            // 添加图片到 PDF 页面
-            const addImageToPdf = (imgData, index) => {
+            // 定义添加图片到PDF页面的函数
+            const addImageToPdf = (imgData, index, size) => {
                 return new Promise((resolve) => {
                     const img = new Image();
                     img.src = imgData;
                     img.onload = () => {
                         if (index > 0) {
                             pdf.addPage();
-                            setPageSize(); // 重新设置页面尺寸
                         }
-                        pdf.addImage(imgData, 'JPEG', 0, 0, maxWidth, maxHeight);
+
+                        // 设置PDF页面的尺寸为A4宽度，并根据图片宽高比计算高度
+                        const A4_width = 210;
+                        const A4_height = 297;
+                        const scaleFactor = A4_width / size.width;
+                        const newHeight = size.height * scaleFactor;
+
+                        // 检查高度是否超过A4高度，如果超过则调整为A4高度并调整宽度
+                        let finalWidth = A4_width;
+                        let finalHeight = newHeight;
+                        if (newHeight > A4_height) {
+                            finalHeight = A4_height;
+                            finalWidth = size.width * (A4_height / size.height);
+                        }
+
+                        pdf.internal.pageSize.width = finalWidth;
+                        pdf.internal.pageSize.height = finalHeight;
+                        pdf.addImage(imgData, 'JPEG', 0, 0, finalWidth, finalHeight);
                         resolve();
                     };
                 });
@@ -311,13 +304,14 @@
 
             // 按顺序添加所有图片
             for (let i = 0; i < images.length; i++) {
-                await addImageToPdf(images[i], i);
+                await addImageToPdf(images[i], i, sizes[i]);
                 this.ui.updateProgress(i + 1); // 更新进度
             }
 
             // 保存 PDF 文件
             pdf.save(`${this.chapterName}.pdf`);
         }
+
     }
 
     // 6. 初始化
