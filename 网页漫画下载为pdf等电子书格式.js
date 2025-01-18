@@ -1,14 +1,15 @@
 // ==UserScript==
 // @name         网页漫画下载为pdf格式
 // @namespace    http://tampermonkey.net/
-// @version      1.7.1
+// @version      1.7.2
 
-// @description  将网页漫画下载下来方便导入墨水屏电子书进行阅读，目前仅适用于如漫画(https://m.rumanhua.com/)
+// @description  将网页漫画下载为pdf方便阅读，目前仅适用于如漫画(电脑版)[https://m.rumanhua.com/]、(手机版)[https://www.rumanhua.com/]
 // @author       MornLight
 // @match        https://m.rumanhua.com/*
 // @match        https://www.rumanhua.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=greasyfork.org
 // @grant        GM_xmlhttpRequest
+// @connect *
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js
 // @run-at       document-end
 // @license      MIT
@@ -229,15 +230,17 @@
             return downloadResults;
         }
 
-        downloadImage(url) {
+        downloadImage(url, index) {
             return new Promise((resolve, reject) => {
-                GM_xmlhttpRequest({
-                    method: 'GET',
-                    url: url,
-                    responseType: 'blob',
-                    onload: response => this.handleImageResponse(response, resolve, reject),
-                    onerror: error => reject(error)
-                });
+                setTimeout(() => {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: url,
+                        responseType: 'blob',
+                        onload: response => this.handleImageResponse(response, resolve, reject),
+                        onerror: error => reject(error)
+                    });
+                }, index * 500); // 增加延迟，防止被网站限制
             });
         }
 
