@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         网页漫画下载为pdf格式
 // @namespace    http://tampermonkey.net/
-// @version      2.0.0
+// @version      2.0.1
 // @description  将网页漫画下载为pdf方便阅读，目前仅适用于如漫画(电脑版)[https://m.rumanhua.com/]、(手机版)[https://www.rumanhua.com/]
 // @author       MornLight
 // @match        https://m.rumanhua.com/*

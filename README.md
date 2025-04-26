@@ -1,6 +1,6 @@
 # ComicDownloader漫画下载插件
 
-适用于[如漫画网站](https://www.rumanhua.com/)的漫画离线下载油猴插件
+适用于[如漫画网站](http://www.rumanhua1.com/)的漫画离线下载油猴插件。插件下载地址：[下载](https://greasyfork.org/zh-CN/scripts/517511-%E7%BD%91%E9%A1%B5%E6%BC%AB%E7%94%BB%E4%B8%8B%E8%BD%BD%E4%B8%BApdf%E6%A0%BC%E5%BC%8F)
 
 ### 功能介绍
 
@@ -10,12 +10,13 @@
 
 |      网站名      |           网址            | 是否适配 |
 | :--------------: | :-----------------------: | :------: |
-| 如漫画（手机端） |  https://m.rumanhua.com/  |    √     |
-| 如漫画（电脑端） | https://www.rumanhua.com/ |    √     |
+| 如漫画（手机端） |  http://m.rumanhua1.com/  |    √（暂无法批量下载）     |
+| 如漫画（电脑端） | http://www.rumanhua1.com/ |    √     |
 
 ### 使用指南
 
 #### 1. 安装本脚本，允许相关权限，否则无法下载
+插件下载地址：[下载](https://greasyfork.org/zh-CN/scripts/517511-%E7%BD%91%E9%A1%B5%E6%BC%AB%E7%94%BB%E4%B8%8B%E8%BD%BD%E4%B8%BApdf%E6%A0%BC%E5%BC%8F)
 
 *页面可能会弹出三次，记得允许！！*
 

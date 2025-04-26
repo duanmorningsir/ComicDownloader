@@ -4,7 +4,7 @@
 // @version      2.0.1
 // @description  将网页漫画下载为pdf方便阅读，目前仅适用于如漫画(电脑版)[https://m.rumanhua.com/]、(手机版)[https://www.rumanhua.com/]
 // @author       MornLight
-// @match        https://m.rumanhua.com/*
+// @match        http://m.rumanhua1.com/*
 // @match        http://www.rumanhua1.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=greasyfork.org
 // @grant        GM_xmlhttpRequest
@@ -85,14 +85,14 @@
         isChapterPage() {
             const url = window.location.href;
             // 恢复原来的匹配模式
-            const chapterPagePattern = /https:\/\/m\.rumanhua\.com\/[^\/]+\/[^\/]+\.html/;
+            const chapterPagePattern = /http:\/\/m\.rumanhua1\.com\/[^\/]+\/[^\/]+\.html/;
             return chapterPagePattern.test(url);
         }
 
         isDirectoryPage() {
             const url = window.location.href;
             // 恢复原来的匹配模式
-            const directoryPagePattern = /https:\/\/m\.rumanhua\.com\/[^\/]+\/?$/;
+            const directoryPagePattern = /http:\/\/m\.rumanhua1\.com\/[^\/]+\/?$/;
             return directoryPagePattern.test(url);
         }
         getChapterLinks() {
@@ -165,7 +165,7 @@
         switch (true) {
             case url.includes('http://www.rumanhua1.com/'):
                 return new RumanhuaPCAdapter();
-            case url.includes('https://m.rumanhua.com/'):
+            case url.includes('http://m.rumanhua1.com/'):
                 return new RumanhuaAdapter();
             default:
                 throw new Error('不支持的页面格式');
