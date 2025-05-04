@@ -31,61 +31,110 @@
             zIndex: '9999',
             display: 'flex',
             flexDirection: 'column',
-            gap: '12px',
-            backgroundColor: 'rgba(255, 255, 255, 0.95)',
-            padding: '15px',
-            borderRadius: '5px',
-            boxShadow: '0 0 10px rgba(0,0,0,0.2)',
+            gap: '16px',
+            backgroundColor: '#f8fafc',
+            padding: '20px',
+            borderRadius: '18px',
+            boxShadow: '0 4px 24px 0 rgba(60,60,100,0.13)',
             maxHeight: '80vh',
             overflowY: 'auto',
-            minWidth: '250px',
+            minWidth: '260px',
+            border: '1px solid #e0e6ef',
+            boxSizing: 'border-box',
             '@media (max-width: 768px)': {
-                bottom: '10px',
-                right: '10px',
-                left: '10px',
+                bottom: '8px',
+                right: '8px',
+                left: '8px',
                 minWidth: 'auto',
-                width: 'calc(100% - 20px)',
-                padding: '10px',
-                gap: '8px'
+                width: 'calc(100% - 16px)',
+                padding: '8px',
+                gap: '6px',
+                borderRadius: '10px',
             }
         },
         button: {
-            padding: '10px',
+            padding: '12px 0',
             color: '#fff',
             border: 'none',
-            borderRadius: '5px',
+            borderRadius: '24px',
             cursor: 'pointer',
             backgroundColor: '#4CAF50',
-            transition: 'background-color 0.3s',
+            boxShadow: '0 2px 8px 0 rgba(76,175,80,0.08)',
+            fontWeight: 'bold',
+            fontSize: '17px',
+            letterSpacing: '1px',
+            transition: 'background 0.3s, box-shadow 0.2s, transform 0.1s',
+            margin: '2px 0',
+            outline: 'none',
+            ':hover': {
+                backgroundColor: '#43e97b',
+                boxShadow: '0 4px 16px 0 rgba(67,233,123,0.18)',
+                transform: 'translateY(-2px) scale(1.03)'
+            },
             '@media (max-width: 768px)': {
-                padding: '12px',
-                fontSize: '14px',
-                width: '100%'
+                padding: '5px 0',
+                fontSize: '12px',
+                width: '100%',
+                borderRadius: '8px',
+                margin: '2px 0',
             }
         },
         cancelButton: {
             backgroundColor: '#f44336',
             display: 'none',
+            fontWeight: 'bold',
+            fontSize: '17px',
+            borderRadius: '24px',
+            boxShadow: '0 2px 8px 0 rgba(244,67,54,0.08)',
+            transition: 'background 0.3s, box-shadow 0.2s, transform 0.1s',
+            ':hover': {
+                backgroundColor: '#ff7e5f',
+                boxShadow: '0 4px 16px 0 rgba(255,126,95,0.18)',
+                transform: 'translateY(-2px) scale(1.03)'
+            },
             '@media (max-width: 768px)': {
-                padding: '12px',
-                fontSize: '14px',
-                width: '100%'
+                padding: '5px 0',
+                fontSize: '12px',
+                width: '100%',
+                borderRadius: '8px',
+                margin: '2px 0',
             }
         },
         progressContainer: {
             display: 'none',
+            background: 'rgba(245,247,250,0.85)',
+            borderRadius: '10px',
+            padding: '8px 0 2px 0',
+            margin: '4px 0',
+            boxShadow: '0 1px 4px 0 rgba(60,60,100,0.06)',
             '@media (max-width: 768px)': {
-                width: '100%'
+                width: '100%',
+                padding: '4px 0 1px 0',
+                borderRadius: '7px',
             }
         },
         infoText: {
-            color: '#666',
-            fontSize: '14px',
+            color: '#4a5568',
+            fontSize: '15px',
             textAlign: 'center',
-            marginBottom: '8px',
+            marginBottom: '10px',
+            fontWeight: '500',
+            letterSpacing: '0.5px',
             '@media (max-width: 768px)': {
                 fontSize: '12px',
-                marginBottom: '6px'
+                marginBottom: '5px',
+            }
+        },
+        chapterListContainer: {
+            marginTop: '10px',
+            display: 'none',
+            maxHeight: '50vh',
+            overflowY: 'auto',
+            paddingRight: '18px',
+            boxSizing: 'border-box',
+            '@media (max-width: 768px)': {
+                maxHeight: '60vh',
+                paddingRight: '0',
             }
         }
     };
@@ -228,16 +277,52 @@
         }
 
         async getChapterLinks() {
-            const chapterListElement = document.querySelector('.chapterlistload ul');
-            if (!chapterListElement) {
-                throw new Error('未找到章节列表');
-            }
+            // 参考手机版，支持多种选择器
+            const waitForChapterList = () => {
+                return new Promise((resolve, reject) => {
+                    let attempts = 0;
+                    const maxAttempts = 10;
 
-            const chapterElements = chapterListElement.querySelectorAll('a');
-            return Array.from(chapterElements).map(element => ({
-                url: element.href,
-                name: element.textContent.trim()
-            }));
+                    const checkForList = () => {
+                        const selectors = [
+                            '.chapterlistload ul',
+                            '.cartoon-box .chaplist-box ul',
+                            '.chaplist-box ul',
+                            '.chapter-list ul',
+                            '.chapterlist ul'
+                        ];
+                        for (const selector of selectors) {
+                            const element = document.querySelector(selector);
+                            if (element) {
+                                resolve(element);
+                                return;
+                            }
+                        }
+                        attempts++;
+                        if (attempts >= maxAttempts) {
+                            reject(new Error('未找到章节列表'));
+                            return;
+                        }
+                        setTimeout(checkForList, 500);
+                    };
+                    checkForList();
+                });
+            };
+
+            try {
+                const chapterListElement = await waitForChapterList();
+                const chapterElements = chapterListElement.querySelectorAll('a');
+                const baseUrl = window.location.origin;
+                const links = Array.from(chapterElements).map(element => {
+                    const href = element.getAttribute('href');
+                    const url = href.startsWith('http') ? href : baseUrl + href;
+                    const name = element.textContent.trim();
+                    return { url, name };
+                });
+                return links;
+            } catch (error) {
+                throw error;
+            }
         }
 
         getChapterName() {
@@ -522,17 +607,7 @@
             this.container.appendChild(this.cancelSelectionButton);
 
             // 创建章节列表容器
-            this.chapterListContainer = this.createElement('div', {
-                marginTop: '10px',
-                display: 'none',
-                maxHeight: '50vh',
-                overflowY: 'auto',
-                paddingRight: '5px',
-                '@media (max-width: 768px)': {
-                    maxHeight: '60vh',
-                    paddingRight: '0'
-                }
-            });
+            this.chapterListContainer = this.createElement('div', STYLES.chapterListContainer);
             this.container.appendChild(this.chapterListContainer);
 
             // 添加进度显示区域

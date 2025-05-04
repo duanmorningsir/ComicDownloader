@@ -31,61 +31,110 @@
             zIndex: '9999',
             display: 'flex',
             flexDirection: 'column',
-            gap: '12px',
-            backgroundColor: 'rgba(255, 255, 255, 0.95)',
-            padding: '15px',
-            borderRadius: '5px',
-            boxShadow: '0 0 10px rgba(0,0,0,0.2)',
+            gap: '16px',
+            backgroundColor: '#f8fafc',
+            padding: '20px',
+            borderRadius: '18px',
+            boxShadow: '0 4px 24px 0 rgba(60,60,100,0.13)',
             maxHeight: '80vh',
             overflowY: 'auto',
-            minWidth: '250px',
+            minWidth: '260px',
+            border: '1px solid #e0e6ef',
+            boxSizing: 'border-box',
             '@media (max-width: 768px)': {
-                bottom: '10px',
-                right: '10px',
-                left: '10px',
+                bottom: '8px',
+                right: '8px',
+                left: '8px',
                 minWidth: 'auto',
-                width: 'calc(100% - 20px)',
-                padding: '10px',
-                gap: '8px'
+                width: 'calc(100% - 16px)',
+                padding: '8px',
+                gap: '6px',
+                borderRadius: '10px',
             }
         },
         button: {
-            padding: '10px',
+            padding: '12px 0',
             color: '#fff',
             border: 'none',
-            borderRadius: '5px',
+            borderRadius: '24px',
             cursor: 'pointer',
             backgroundColor: '#4CAF50',
-            transition: 'background-color 0.3s',
+            boxShadow: '0 2px 8px 0 rgba(76,175,80,0.08)',
+            fontWeight: 'bold',
+            fontSize: '17px',
+            letterSpacing: '1px',
+            transition: 'background 0.3s, box-shadow 0.2s, transform 0.1s',
+            margin: '2px 0',
+            outline: 'none',
+            ':hover': {
+                backgroundColor: '#43e97b',
+                boxShadow: '0 4px 16px 0 rgba(67,233,123,0.18)',
+                transform: 'translateY(-2px) scale(1.03)'
+            },
             '@media (max-width: 768px)': {
-                padding: '12px',
-                fontSize: '14px',
-                width: '100%'
+                padding: '5px 0',
+                fontSize: '12px',
+                width: '100%',
+                borderRadius: '8px',
+                margin: '2px 0',
             }
         },
         cancelButton: {
             backgroundColor: '#f44336',
             display: 'none',
+            fontWeight: 'bold',
+            fontSize: '17px',
+            borderRadius: '24px',
+            boxShadow: '0 2px 8px 0 rgba(244,67,54,0.08)',
+            transition: 'background 0.3s, box-shadow 0.2s, transform 0.1s',
+            ':hover': {
+                backgroundColor: '#ff7e5f',
+                boxShadow: '0 4px 16px 0 rgba(255,126,95,0.18)',
+                transform: 'translateY(-2px) scale(1.03)'
+            },
             '@media (max-width: 768px)': {
-                padding: '12px',
-                fontSize: '14px',
-                width: '100%'
+                padding: '5px 0',
+                fontSize: '12px',
+                width: '100%',
+                borderRadius: '8px',
+                margin: '2px 0',
             }
         },
         progressContainer: {
             display: 'none',
+            background: 'rgba(245,247,250,0.85)',
+            borderRadius: '10px',
+            padding: '8px 0 2px 0',
+            margin: '4px 0',
+            boxShadow: '0 1px 4px 0 rgba(60,60,100,0.06)',
             '@media (max-width: 768px)': {
-                width: '100%'
+                width: '100%',
+                padding: '4px 0 1px 0',
+                borderRadius: '7px',
             }
         },
         infoText: {
-            color: '#666',
-            fontSize: '14px',
+            color: '#4a5568',
+            fontSize: '15px',
             textAlign: 'center',
-            marginBottom: '8px',
+            marginBottom: '10px',
+            fontWeight: '500',
+            letterSpacing: '0.5px',
             '@media (max-width: 768px)': {
                 fontSize: '12px',
-                marginBottom: '6px'
+                marginBottom: '5px',
+            }
+        },
+        chapterListContainer: {
+            marginTop: '10px',
+            display: 'none',
+            maxHeight: '50vh',
+            overflowY: 'auto',
+            paddingRight: '18px',
+            boxSizing: 'border-box',
+            '@media (max-width: 768px)': {
+                maxHeight: '60vh',
+                paddingRight: '0',
             }
         }
     };
@@ -132,6 +181,7 @@
             const directoryPagePattern = /http:\/\/m\.rumanhua1\.com\/[^\/]+\/?$/;
             return directoryPagePattern.test(url);
         }
+
         async getChapterLinks() {
             const waitForChapterList = () => {
                 return new Promise((resolve, reject) => {
@@ -183,18 +233,33 @@
                 throw error;
             }
         }
+
         getChapterName() {
             const chapterNameElement = document.querySelector('.chaphead-name h1');
             return chapterNameElement ? chapterNameElement.textContent.trim() : '未知章节';
         }
 
         getImageElements() {
-            return document.querySelectorAll('div.chapter-img-box');
+            return document.querySelectorAll('.chapter-img-box img');
         }
 
         getImageUrl(imgElement) {
-            const img = imgElement.querySelector('img');
-            return img?.src?.includes('/static/images/load.gif') ? img?.dataset?.src : img?.src;
+            if (!imgElement) return null;
+
+            const src = imgElement.src || imgElement.dataset.src;
+            if (!src) return null;
+
+            let imageUrl = src.includes('/static/images/load.gif') ? imgElement.dataset.src : src;
+
+            if (imageUrl.startsWith('blob:')) {
+                return imageUrl;
+            }
+
+            if (imageUrl.startsWith('http:')) {
+                imageUrl = imageUrl.replace('http:', 'https:');
+            }
+
+            return imageUrl;
         }
     }
 
@@ -210,14 +275,54 @@
             const directoryPagePattern = /http:\/\/www\.rumanhua1\.com\/[^\/]+\/?$/;
             return directoryPagePattern.test(url);
         }
-        getChapterLinks() {
-            const chapterListElement = document.querySelector('.chapterlistload ul');
-            if (!chapterListElement) {
-                throw new Error('未找到章节列表');
-            }
 
-            const chapterElements = chapterListElement.querySelectorAll('a');
-            return Array.from(chapterElements).map(element => element.href);
+        async getChapterLinks() {
+            // 参考手机版，支持多种选择器
+            const waitForChapterList = () => {
+                return new Promise((resolve, reject) => {
+                    let attempts = 0;
+                    const maxAttempts = 10;
+
+                    const checkForList = () => {
+                        const selectors = [
+                            '.chapterlistload ul',
+                            '.cartoon-box .chaplist-box ul',
+                            '.chaplist-box ul',
+                            '.chapter-list ul',
+                            '.chapterlist ul'
+                        ];
+                        for (const selector of selectors) {
+                            const element = document.querySelector(selector);
+                            if (element) {
+                                resolve(element);
+                                return;
+                            }
+                        }
+                        attempts++;
+                        if (attempts >= maxAttempts) {
+                            reject(new Error('未找到章节列表'));
+                            return;
+                        }
+                        setTimeout(checkForList, 500);
+                    };
+                    checkForList();
+                });
+            };
+
+            try {
+                const chapterListElement = await waitForChapterList();
+                const chapterElements = chapterListElement.querySelectorAll('a');
+                const baseUrl = window.location.origin;
+                const links = Array.from(chapterElements).map(element => {
+                    const href = element.getAttribute('href');
+                    const url = href.startsWith('http') ? href : baseUrl + href;
+                    const name = element.textContent.trim();
+                    return { url, name };
+                });
+                return links;
+            } catch (error) {
+                throw error;
+            }
         }
 
         getChapterName() {
@@ -226,12 +331,26 @@
         }
 
         getImageElements() {
-            return document.querySelectorAll('div.chapter-img-box');
+            return document.querySelectorAll('div.chapter-img-box img');
         }
 
         getImageUrl(imgElement) {
-            const img = imgElement.querySelector('img');
-            return img?.src?.includes('/static/images/load.gif') ? img?.dataset?.src : img?.src;
+            if (!imgElement) return null;
+
+            const src = imgElement.src || imgElement.dataset.src;
+            if (!src) return null;
+
+            let imageUrl = src.includes('/static/images/load.gif') ? imgElement.dataset.src : src;
+
+            if (imageUrl.startsWith('blob:')) {
+                return imageUrl;
+            }
+
+            if (imageUrl.startsWith('http:')) {
+                imageUrl = imageUrl.replace('http:', 'https:');
+            }
+
+            return imageUrl;
         }
     }
 
@@ -423,7 +542,14 @@
 
         createUI() {
             // 创建容器
-            this.container = this.createElement('div', STYLES.container);
+            this.container = this.createElement('div', {
+                ...STYLES.container,
+                '@media (min-width: 769px)': {
+                    width: '300px',
+                    right: '20px',
+                    left: 'auto'
+                }
+            });
             document.body.appendChild(this.container);
 
             // 创建【选择章节下载】按钮
@@ -481,17 +607,7 @@
             this.container.appendChild(this.cancelSelectionButton);
 
             // 创建章节列表容器
-            this.chapterListContainer = this.createElement('div', {
-                marginTop: '10px',
-                display: 'none',
-                maxHeight: '50vh',
-                overflowY: 'auto',
-                paddingRight: '5px',
-                '@media (max-width: 768px)': {
-                    maxHeight: '60vh',
-                    paddingRight: '0'
-                }
-            });
+            this.chapterListContainer = this.createElement('div', STYLES.chapterListContainer);
             this.container.appendChild(this.chapterListContainer);
 
             // 添加进度显示区域
@@ -532,18 +648,13 @@
         }
 
         async initChapterList() {
-            console.log('initChapterList 开始执行');
-            // 清空现有章节列表
             this.chapterListContainer.innerHTML = '';
             this.selectedChapters.clear();
 
             try {
-                console.log('准备获取章节列表');
                 const chapterLinks = await this.adapter.getChapterLinks();
-                console.log('获取到章节链接:', chapterLinks);
 
                 if (!chapterLinks || chapterLinks.length === 0) {
-                    console.error('未获取到章节链接');
                     return;
                 }
 
@@ -609,21 +720,38 @@
                     const chapterItem = this.createElement('div', {
                         display: 'flex',
                         alignItems: 'center',
-                        marginBottom: '5px'
+                        marginBottom: '5px',
+                        padding: '5px',
+                        borderRadius: '3px',
+                        transition: 'background-color 0.2s',
+                        ':hover': {
+                            backgroundColor: 'rgba(0, 0, 0, 0.05)'
+                        }
                     });
 
-                    const chapterNameSpan = this.createElement('span', { flex: 1 }, chapter.name);
-                    chapterItem.appendChild(chapterNameSpan);
+                    const chapterNameSpan = this.createElement('span', {
+                        flex: 1,
+                        marginRight: '10px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                    }, chapter.name);
 
                     // 复选框
-                    const checkbox = this.createElement('input', { type: 'checkbox', marginLeft: '10px' });
+                    const checkbox = this.createElement('input', {
+                        type: 'checkbox',
+                        marginLeft: '10px',
+                        cursor: 'pointer',
+                        width: '16px',
+                        height: '16px'
+                    });
+
                     checkbox.addEventListener('change', () => this.toggleChapterSelection(index, checkbox));
+                    chapterItem.appendChild(chapterNameSpan);
                     chapterItem.appendChild(checkbox);
 
                     this.chapterListContainer.appendChild(chapterItem);
                 });
-
-                console.log('章节列表初始化完成');
             } catch (error) {
                 console.error('初始化章节列表失败:', error);
             }
@@ -900,22 +1028,18 @@
 
             try {
                 const chapterLinks = await this.adapter.getChapterLinks();
-                const selectedChapterUrls = Array.from(selectedChapters).map(index => chapterLinks[index]);
+                const selectedChapterUrls = Array.from(selectedChapters).map(index => chapterLinks[index].url);
 
                 this.ui.setLoading(true, selectedChapterUrls.length);
-                // 获取长图模式状态
                 this.isLongPageMode = this.ui.isLongPageMode;
 
                 for (let i = 0; i < selectedChapterUrls.length; i++) {
                     const url = selectedChapterUrls[i];
                     try {
-                        console.log(`开始下载章节 ${i + 1}/${selectedChapterUrls.length}: ${url}`);
-
                         const sessionId = Date.now().toString();
                         GM_setValue('autoDownload', true);
                         GM_setValue('sessionId', sessionId);
                         GM_setValue('downloadStatus', 'pending');
-                        // 保存长图模式状态
                         GM_setValue('isLongPageMode', this.isLongPageMode);
 
                         const tab = GM_openInTab(url, {
@@ -924,16 +1048,13 @@
                             setParent: true
                         });
 
-                        // 等待下载完成，增加重试机制
                         await new Promise((resolve, reject) => {
-                            const maxRetries = 3;  // 最大重试次数
+                            const maxRetries = 3;
                             let retryCount = 0;
                             let timeout;
 
                             const checkStatus = () => {
                                 const status = GM_getValue('downloadStatus', '');
-                                console.log(`检查下载状态: ${status}, 重试次数: ${retryCount}`);
-
                                 if (status === 'complete') {
                                     clearTimeout(timeout);
                                     GM_setValue('downloadStatus', '');
@@ -947,22 +1068,18 @@
                             const startCheck = () => {
                                 timeout = setTimeout(() => {
                                     if (!checkStatus() && retryCount < maxRetries) {
-                                        console.log(`下载超时，尝试重试 ${retryCount + 1}/${maxRetries}`);
                                         retryCount++;
-                                        // 重新激活标签页
                                         tab.activate();
                                         startCheck();
                                     } else if (retryCount >= maxRetries) {
                                         GM_setValue('downloadStatus', '');
                                         reject(new Error('下载超时，已达到最大重试次数'));
                                     }
-                                }, 30000); // 30秒超时
+                                }, 30000);
                             };
 
-                            // 开始检查
                             startCheck();
 
-                            // 定期检查状态
                             const checkInterval = setInterval(() => {
                                 if (checkStatus()) {
                                     clearInterval(checkInterval);
