@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         网页漫画下载为pdf格式
 // @namespace    http://tampermonkey.net/
-// @version      2.2.0
+// @version      2.2.1
 // @description  将网页漫画下载为pdf方便阅读，目前仅适用于如漫画[http://www.rumanhua1.com/]
 // @author       MornLight
 // @match        http://m.rumanhua1.com/*
@@ -53,52 +53,62 @@
             }
         },
         button: {
-            padding: '12px 0',
+            padding: '8px 0',
             color: '#fff',
             border: 'none',
-            borderRadius: '24px',
+            borderRadius: '12px',
             cursor: 'pointer',
             backgroundColor: '#4CAF50',
-            boxShadow: '0 2px 8px 0 rgba(76,175,80,0.08)',
+            boxShadow: '0 1px 4px 0 rgba(76,175,80,0.08)',
             fontWeight: 'bold',
-            fontSize: '17px',
-            letterSpacing: '1px',
-            transition: 'background 0.3s, box-shadow 0.2s, transform 0.1s',
-            margin: '2px 0',
+            fontSize: '15px',
+            letterSpacing: '0.5px',
+            transition: 'background 0.2s, box-shadow 0.15s, transform 0.08s',
+            margin: '4px 0',
             outline: 'none',
+            width: '100%',
+            minHeight: '36px',
             ':hover': {
                 backgroundColor: '#43e97b',
-                boxShadow: '0 4px 16px 0 rgba(67,233,123,0.18)',
-                transform: 'translateY(-2px) scale(1.03)'
+                boxShadow: '0 2px 8px 0 rgba(67,233,123,0.18)',
+                transform: 'translateY(-1px) scale(1.02)'
             },
             '@media (max-width: 768px)': {
-                padding: '5px 0',
-                fontSize: '12px',
-                width: '100%',
+                padding: '6px 0',
+                fontSize: '13px',
                 borderRadius: '8px',
-                margin: '2px 0',
+                margin: '3px 0',
+                minHeight: '28px',
             }
         },
         cancelButton: {
             backgroundColor: '#f44336',
-            display: 'none',
             fontWeight: 'bold',
-            fontSize: '17px',
-            borderRadius: '24px',
-            boxShadow: '0 2px 8px 0 rgba(244,67,54,0.08)',
-            transition: 'background 0.3s, box-shadow 0.2s, transform 0.1s',
+            fontSize: '15px',
+            borderRadius: '12px',
+            boxShadow: '0 1px 4px 0 rgba(244,67,54,0.08)',
+            margin: '4px 0',
+            width: '100%',
+            minHeight: '36px',
             ':hover': {
                 backgroundColor: '#ff7e5f',
-                boxShadow: '0 4px 16px 0 rgba(255,126,95,0.18)',
-                transform: 'translateY(-2px) scale(1.03)'
+                boxShadow: '0 2px 8px 0 rgba(255,126,95,0.18)',
+                transform: 'translateY(-1px) scale(1.02)'
             },
             '@media (max-width: 768px)': {
-                padding: '5px 0',
-                fontSize: '12px',
-                width: '100%',
+                fontSize: '13px',
                 borderRadius: '8px',
-                margin: '2px 0',
+                margin: '3px 0',
+                minHeight: '28px',
             }
+        },
+        buttonGroup: {
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            alignItems: 'center',
+            marginBottom: '10px',
+            width: '100%',
         },
         progressContainer: {
             display: 'none',
@@ -272,12 +282,10 @@
 
         isDirectoryPage() {
             const url = window.location.href;
-            const directoryPagePattern = /http:\/\/www\.rumanhua1\.com\/[^\/]+\/?$/;
-            return directoryPagePattern.test(url);
+            return url.includes('www.rumanhua1.com') && !this.isChapterPage();
         }
 
         async getChapterLinks() {
-            // 参考手机版，支持多种选择器
             const waitForChapterList = () => {
                 return new Promise((resolve, reject) => {
                     let attempts = 0;
@@ -289,7 +297,8 @@
                             '.cartoon-box .chaplist-box ul',
                             '.chaplist-box ul',
                             '.chapter-list ul',
-                            '.chapterlist ul'
+                            '.chapterlist ul',
+                            '.chapterlistload ul li a'
                         ];
                         for (const selector of selectors) {
                             const element = document.querySelector(selector);
@@ -321,7 +330,8 @@
                 });
                 return links;
             } catch (error) {
-                throw error;
+                console.error('获取章节列表失败:', error);
+                return [];
             }
         }
 
@@ -515,29 +525,23 @@
 
     // 4.2 章节选择器UI
     class ChapterSelectorUI {
-        constructor(onDownloadSelected, adapter) {
+        constructor({ adapter, onDownloadSelected, onToggleLongPageMode, onCancel, onProgress, onLoading, onComplete, onError }) {
+            this.adapter = adapter;
             this.onDownloadSelected = onDownloadSelected;
-            this.adapter = adapter;  // 添加 adapter 参数
+            this.onToggleLongPageMode = onToggleLongPageMode;
+            this.onCancel = onCancel;
+            this.onProgress = onProgress;
+            this.onLoading = onLoading;
+            this.onComplete = onComplete;
+            this.onError = onError;
             this.selectedChapters = new Set();
             this.isSelectionMode = false;
             this.isLongPageMode = false;
+            this.selectionStart = null;
+            this.selectionEnd = null;
             this.createUI();
-        }
-
-        // 添加 createElement 方法
-        createElement(type, styles, textContent = '') {
-            const element = document.createElement(type);
-            if (type === 'input' && styles.type) {
-                element.type = styles.type;
-                delete styles.type;
-            }
-            if (typeof styles === 'string') {
-                element.className = styles;
-            } else {
-                applyResponsiveStyles(element, styles);
-            }
-            if (textContent) element.textContent = textContent;
-            return element;
+            this.chapterListContainer.style.display = 'block';
+            this.initChapterList();
         }
 
         createUI() {
@@ -566,8 +570,15 @@
                     fontSize: '14px'
                 }
             }, '选择章节下载');
-            this.selectButton.addEventListener('click', () => this.toggleSelectionMode());
-            this.container.appendChild(this.selectButton);
+            this.selectButton.addEventListener('click', () => {
+                if (this.isSelectionMode) {
+                    if (this.selectedChapters.size > 0) {
+                        this.onDownloadSelected && this.onDownloadSelected(Array.from(this.selectedChapters));
+                    }
+                } else {
+                    this.toggleSelectionMode();
+                }
+            });
 
             // 添加长图模式切换按钮
             this.longPageModeButton = this.createElement('button', {
@@ -584,13 +595,16 @@
                     fontSize: '14px'
                 }
             }, '切换长图模式');
-            this.longPageModeButton.addEventListener('click', () => this.toggleLongPageMode());
-            this.container.appendChild(this.longPageModeButton);
+            this.longPageModeButton.addEventListener('click', () => {
+                this.isLongPageMode = !this.isLongPageMode;
+                this.longPageModeButton.textContent = this.isLongPageMode ? '切换普通模式' : '切换长图模式';
+                this.longPageModeButton.style.backgroundColor = this.isLongPageMode ? '#4CAF50' : '#2196F3';
+                this.onToggleLongPageMode && this.onToggleLongPageMode(this.isLongPageMode);
+            });
 
             // 添加取消按钮
             this.cancelSelectionButton = this.createElement('button', {
-                ...STYLES.button,
-                backgroundColor: '#f44336',
+                ...STYLES.cancelButton,
                 position: 'sticky',
                 top: '80px',
                 zIndex: '10',
@@ -603,11 +617,23 @@
                     fontSize: '14px'
                 }
             }, '返回');
-            this.cancelSelectionButton.addEventListener('click', () => this.cancelSelectionMode());
-            this.container.appendChild(this.cancelSelectionButton);
+            this.cancelSelectionButton.addEventListener('click', () => {
+                this.cancelSelectionMode();
+                this.onCancel && this.onCancel();
+            });
+
+            // 创建按钮组容器并添加按钮
+            this.buttonGroup = this.createElement('div', STYLES.buttonGroup);
+            this.buttonGroup.appendChild(this.selectButton);
+            this.buttonGroup.appendChild(this.longPageModeButton);
+            this.buttonGroup.appendChild(this.cancelSelectionButton);
+            this.container.appendChild(this.buttonGroup);
 
             // 创建章节列表容器
-            this.chapterListContainer = this.createElement('div', STYLES.chapterListContainer);
+            this.chapterListContainer = this.createElement('div', {
+                ...STYLES.chapterListContainer,
+                display: 'block' // 确保章节列表容器默认显示
+            });
             this.container.appendChild(this.chapterListContainer);
 
             // 添加进度显示区域
@@ -647,218 +673,6 @@
             });
         }
 
-        async initChapterList() {
-            this.chapterListContainer.innerHTML = '';
-            this.selectedChapters.clear();
-
-            try {
-                const chapterLinks = await this.adapter.getChapterLinks();
-
-                if (!chapterLinks || chapterLinks.length === 0) {
-                    return;
-                }
-
-                // 添加简单的控制区
-                const controlsContainer = this.createElement('div', {
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    marginBottom: '10px',
-                    position: 'sticky',
-                    top: '0',
-                    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                    padding: '5px 0',
-                    zIndex: '1'
-                });
-
-                // 添加章节数量显示
-                const chapterCountLabel = this.createElement('span', {
-                    fontSize: '12px',
-                    color: '#666',
-                    alignSelf: 'center'
-                }, `共 ${chapterLinks.length} 章`);
-
-                // 创建按钮容器
-                const buttonsContainer = this.createElement('div', {
-                    display: 'flex',
-                    gap: '5px'
-                });
-
-                // 添加刷新按钮
-                const refreshBtn = this.createElement('button', {
-                    padding: '3px 8px',
-                    fontSize: '12px',
-                    backgroundColor: '#2196F3',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '3px',
-                    cursor: 'pointer'
-                }, '刷新列表');
-
-                refreshBtn.addEventListener('click', () => this.refreshChapterList());
-
-                // 添加清除选择按钮
-                const deselectAllBtn = this.createElement('button', {
-                    padding: '3px 8px',
-                    fontSize: '12px',
-                    backgroundColor: '#f44336',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '3px',
-                    cursor: 'pointer'
-                }, '清除选择');
-
-                deselectAllBtn.addEventListener('click', () => this.deselectAll());
-
-                buttonsContainer.appendChild(refreshBtn);
-                buttonsContainer.appendChild(deselectAllBtn);
-                controlsContainer.appendChild(chapterCountLabel);
-                controlsContainer.appendChild(buttonsContainer);
-                this.chapterListContainer.appendChild(controlsContainer);
-
-                // 添加章节列表
-                chapterLinks.forEach((chapter, index) => {
-                    const chapterItem = this.createElement('div', {
-                        display: 'flex',
-                        alignItems: 'center',
-                        marginBottom: '5px',
-                        padding: '5px',
-                        borderRadius: '3px',
-                        transition: 'background-color 0.2s',
-                        ':hover': {
-                            backgroundColor: 'rgba(0, 0, 0, 0.05)'
-                        }
-                    });
-
-                    const chapterNameSpan = this.createElement('span', {
-                        flex: 1,
-                        marginRight: '10px',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
-                    }, chapter.name);
-
-                    // 复选框
-                    const checkbox = this.createElement('input', {
-                        type: 'checkbox',
-                        marginLeft: '10px',
-                        cursor: 'pointer',
-                        width: '16px',
-                        height: '16px'
-                    });
-
-                    checkbox.addEventListener('change', () => this.toggleChapterSelection(index, checkbox));
-                    chapterItem.appendChild(chapterNameSpan);
-                    chapterItem.appendChild(checkbox);
-
-                    this.chapterListContainer.appendChild(chapterItem);
-                });
-            } catch (error) {
-                console.error('初始化章节列表失败:', error);
-            }
-        }
-
-        // 添加取消选择模式的方法
-        cancelSelectionMode() {
-            this.isSelectionMode = false;
-            this.chapterListContainer.style.display = 'none';
-            this.cancelSelectionButton.style.display = 'none';
-            this.selectButton.textContent = '选择章节下载';
-            this.selectedChapters.clear();
-        }
-
-        // 保留取消全选方法
-        deselectAll() {
-            const checkboxes = this.chapterListContainer.querySelectorAll('input[type="checkbox"]');
-            checkboxes.forEach(checkbox => {
-                checkbox.checked = false;
-            });
-            this.selectedChapters.clear();
-            this.selectButton.textContent = '选择章节下载';
-        }
-
-        // 移除 selectAll、selectPrevious5Chapters、selectNext5Chapters 方法
-        selectAll(count) {
-            const checkboxes = this.chapterListContainer.querySelectorAll('input[type="checkbox"]');
-            checkboxes.forEach((checkbox, index) => {
-                // 跳过第一行的控制按钮
-                if (index > 0) {
-                    checkbox.checked = true;
-                    this.selectedChapters.add(index - 1); // 减1是因为索引从0开始
-                }
-            });
-            this.selectButton.textContent = `下载选中章节 (${count})`;
-        }
-
-        // 添加取消全选方法
-        // 添加取消全选方法
-        deselectAll() {
-            const checkboxes = this.chapterListContainer.querySelectorAll('input[type="checkbox"]');
-            checkboxes.forEach(checkbox => {
-                checkbox.checked = false;
-            });
-            this.selectedChapters.clear();
-            this.selectButton.textContent = '下载选中章节';
-        }
-
-        // 添加刷新章节列表的方法
-        refreshChapterList() {
-            console.log('刷新章节列表');
-            // 保存当前选中的章节
-            const selectedChapters = new Set(this.selectedChapters);
-
-            // 重新初始化章节列表
-            this.initChapterList();
-
-            // 尝试恢复之前选中的章节（如果它们仍然存在）
-            const checkboxes = this.chapterListContainer.querySelectorAll('input[type="checkbox"]');
-            const maxIndex = checkboxes.length - 1;
-
-            selectedChapters.forEach(index => {
-                if (index <= maxIndex) {
-                    // 跳过控制区域，所以索引需要+1
-                    const checkbox = checkboxes[index + 1];
-                    if (checkbox) {
-                        checkbox.checked = true;
-                        this.selectedChapters.add(index);
-                    }
-                }
-            });
-
-            // 更新按钮文本
-            if (this.selectedChapters.size > 0) {
-                this.selectButton.textContent = `下载选中章节 (${this.selectedChapters.size})`;
-            } else {
-                this.selectButton.textContent = '下载选中章节';
-            }
-
-            // 显示刷新成功提示
-            const chapterCountLabel = this.chapterListContainer.querySelector('span');
-            const originalText = chapterCountLabel.textContent;
-            chapterCountLabel.textContent = '刷新成功！';
-            setTimeout(() => {
-                chapterCountLabel.textContent = originalText;
-            }, 1500);
-        }
-
-        // 修改切换选择方法，添加checkbox参数
-        toggleChapterSelection(index, checkbox) {
-            if (this.selectedChapters.has(index)) {
-                this.selectedChapters.delete(index);
-                if (checkbox) checkbox.checked = false;
-            } else {
-                this.selectedChapters.add(index);
-                if (checkbox) checkbox.checked = true;
-            }
-
-            // 更新按钮文本
-            if (this.selectedChapters.size > 0) {
-                this.selectButton.textContent = `下载选中章节 (${this.selectedChapters.size})`;
-            } else {
-                this.selectButton.textContent = '下载选中章节';
-            }
-        }
-
-        // 添加 toggleSelectionMode 方法
         toggleSelectionMode() {
             console.log('toggleSelectionMode 被调用');
             this.isSelectionMode = !this.isSelectionMode;
@@ -869,265 +683,318 @@
                 this.chapterListContainer.style.display = 'block';
                 this.cancelSelectionButton.style.display = 'block';
                 this.selectButton.textContent = '下载选中章节';
-            } else if (this.selectedChapters.size > 0) {
-                console.log('退出选择模式，开始下载选中章节');
-                this.chapterListContainer.style.display = 'none';
-                this.cancelSelectionButton.style.display = 'none';
-                this.onDownloadSelected();
             } else {
-                console.log('退出选择模式，无选中章节');
-                this.chapterListContainer.style.display = 'none';
-                this.cancelSelectionButton.style.display = 'none';
-                this.selectButton.textContent = '选择章节下载';
+                console.log('退出选择模式，检查是否有选中章节');
+                if (this.selectedChapters.size > 0) {
+                    console.log(`开始下载 ${this.selectedChapters.size} 个选中章节`);
+                    this.chapterListContainer.style.display = 'none';
+                    this.cancelSelectionButton.style.display = 'none';
+                    // 调用下载处理函数
+                    this.onDownloadSelected();
+                } else {
+                    console.log('无选中章节，返回选择模式');
+                    this.chapterListContainer.style.display = 'none';
+                    this.cancelSelectionButton.style.display = 'none';
+                    this.selectButton.textContent = '选择章节下载';
+                }
             }
         }
 
-        // 添加长图模式切换方法
+        cancelSelectionMode() {
+            this.isSelectionMode = false;
+            this.chapterListContainer.style.display = 'none';
+            this.cancelSelectionButton.style.display = 'none';
+            this.selectButton.textContent = '选择章节下载';
+            this.selectedChapters.clear();
+            this.selectionStart = null;
+            this.selectionEnd = null;
+            this.updateChapterSelectionUI();
+        }
+
+        async initChapterList() {
+            this.chapterListContainer.innerHTML = '';
+            this.selectedChapters = new Set();
+            this.selectionStart = null;
+            this.selectionEnd = null;
+
+            try {
+                const chapterLinks = await this.adapter.getChapterLinks();
+                if (!chapterLinks || chapterLinks.length === 0) {
+                    return;
+                }
+
+                // 操作区
+                const controlsContainer = this.createElement('div', {
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '12px',
+                    gap: '8px',
+                    position: 'sticky',
+                    top: '0',
+                    backgroundColor: 'rgba(255,255,255,0.9)',
+                    padding: '5px 0',
+                    zIndex: '1'
+                });
+
+                const chapterCountLabel = this.createElement('span', {
+                    fontSize: '12px',
+                    color: '#666',
+                    alignSelf: 'center'
+                }, `共 ${chapterLinks.length} 章`);
+
+                const buttonsContainer = this.createElement('div', {
+                    display: 'flex',
+                    gap: '5px'
+                });
+
+                // 全选按钮
+                const selectAllBtn = this.createElement('button', {
+                    padding: '3px 10px',
+                    fontSize: '12px',
+                    backgroundColor: '#4caf50',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold'
+                }, '全选章节');
+
+                selectAllBtn.addEventListener('click', () => {
+                    this.selectedChapters = new Set(chapterLinks.map((_, i) => i));
+                    this.selectionStart = 0;
+                    this.selectionEnd = chapterLinks.length - 1;
+                    this.updateChapterSelectionUI();
+                    this.selectButton.textContent = `下载选中章节 (${this.selectedChapters.size})`;
+                });
+
+                // 清除选择按钮
+                const deselectAllBtn = this.createElement('button', {
+                    padding: '3px 10px',
+                    fontSize: '12px',
+                    backgroundColor: '#f44336',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold'
+                }, '清除选择');
+
+                deselectAllBtn.addEventListener('click', () => {
+                    this.selectedChapters.clear();
+                    this.selectionStart = null;
+                    this.selectionEnd = null;
+                    this.updateChapterSelectionUI();
+                    this.selectButton.textContent = '下载选中章节';
+                });
+
+                // 刷新按钮
+                const refreshBtn = this.createElement('button', {
+                    padding: '3px 10px',
+                    fontSize: '12px',
+                    backgroundColor: '#2196f3',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold'
+                }, '刷新列表');
+
+                refreshBtn.addEventListener('click', () => this.refreshChapterList());
+
+                buttonsContainer.appendChild(selectAllBtn);
+                buttonsContainer.appendChild(deselectAllBtn);
+                buttonsContainer.appendChild(refreshBtn);
+                controlsContainer.appendChild(chapterCountLabel);
+                controlsContainer.appendChild(buttonsContainer);
+                this.chapterListContainer.appendChild(controlsContainer);
+
+                // 章节列表
+                chapterLinks.forEach((chapter, index) => {
+                    const chapterItem = this.createElement('div', {
+                        padding: '10px 12px',
+                        marginBottom: '8px',
+                        borderRadius: '8px',
+                        background: '#f5f7fa',
+                        cursor: 'pointer',
+                        transition: 'background 0.2s, color 0.2s',
+                        fontSize: '15px',
+                        fontWeight: '500',
+                        userSelect: 'none',
+                        border: '1px solid #e0e6ef',
+                    });
+                    chapterItem.textContent = chapter.name;
+                    chapterItem.addEventListener('click', () => this.handleChapterClick(index, chapterLinks.length));
+                    chapterItem.classList.add('chapter-item');
+                    this.chapterListContainer.appendChild(chapterItem);
+                });
+
+                this.updateChapterSelectionUI();
+            } catch (error) {
+                console.error('初始化章节列表失败:', error);
+            }
+        }
+
+        handleChapterClick(index, total) {
+            console.log(`处理章节点击: index=${index}, total=${total}`);
+            if (!this.isSelectionMode) {
+                this.toggleSelectionMode();
+            }
+
+            if (this.selectionStart === null) {
+                // 第一次点击，设置起始点
+                this.selectionStart = index;
+                this.selectedChapters = new Set([index]);
+            } else if (this.selectionEnd === null) {
+                // 第二次点击，设置结束点并选择区间
+                this.selectionEnd = index;
+                const [start, end] = [this.selectionStart, this.selectionEnd].sort((a, b) => a - b);
+                this.selectedChapters = new Set();
+                for (let i = start; i <= end; i++) {
+                    this.selectedChapters.add(i);
+                }
+            } else {
+                // 第三次点击，开始新的选择
+                this.selectionStart = index;
+                this.selectionEnd = null;
+                this.selectedChapters = new Set([index]);
+            }
+
+            this.updateChapterSelectionUI();
+            if (this.selectedChapters.size > 0) {
+                this.selectButton.textContent = `下载选中章节 (${this.selectedChapters.size})`;
+            } else {
+                this.selectButton.textContent = '下载选中章节';
+            }
+        }
+
+        updateChapterSelectionUI() {
+            console.log('更新章节选择UI');
+            const items = this.chapterListContainer.querySelectorAll('.chapter-item');
+            items.forEach((item, idx) => {
+                if (this.selectedChapters.has(idx)) {
+                    item.style.background = '#2196f3';
+                    item.style.color = '#fff';
+                } else {
+                    item.style.background = '#f5f7fa';
+                    item.style.color = '#222';
+                }
+            });
+        }
+
+        refreshChapterList() {
+            this.initChapterList();
+        }
+
         toggleLongPageMode() {
             this.isLongPageMode = !this.isLongPageMode;
             this.longPageModeButton.textContent = this.isLongPageMode ? '切换普通模式' : '切换长图模式';
             this.longPageModeButton.style.backgroundColor = this.isLongPageMode ? '#4CAF50' : '#2196F3';
         }
 
-        // 修改 setLoading 方法，在加载时隐藏长图模式按钮
+        createElement(type, styles, textContent = '') {
+            const element = document.createElement(type);
+            if (type === 'input' && styles.type) {
+                element.type = styles.type;
+                delete styles.type;
+            }
+            if (typeof styles === 'string') {
+                element.className = styles;
+            } else {
+                applyResponsiveStyles(element, styles);
+            }
+            if (textContent) element.textContent = textContent;
+            return element;
+        }
+
+        // 添加 setLoading 方法
         setLoading(isLoading, totalChapters = 0) {
+            console.log(`设置加载状态: isLoading=${isLoading}, totalChapters=${totalChapters}`);
             this.selectButton.disabled = isLoading;
             this.selectButton.style.backgroundColor = isLoading ? '#999' : '#4CAF50';
             this.selectButton.style.cursor = isLoading ? 'not-allowed' : 'pointer';
-            this.longPageModeButton.style.display = isLoading ? 'none' : 'block'; // 添加这行
+            this.longPageModeButton.style.display = isLoading ? 'none' : 'block';
 
             if (isLoading) {
                 this.selectButton.textContent = '下载中...';
                 this.chapterListContainer.style.display = 'none';
                 this.progressContainer.style.display = 'block';
 
-                this.progressBar.max = totalChapters;
-                this.progressBar.value = 0;
-                this.progressText.textContent = `准备下载 ${totalChapters} 个章节...`;
+                if (this.progressBar) {
+                    this.progressBar.max = totalChapters;
+                    this.progressBar.value = 0;
+                }
+                if (this.progressText) {
+                    this.progressText.textContent = `准备下载 ${totalChapters} 个章节...`;
+                }
             } else {
                 this.selectButton.textContent = '选择章节下载';
                 this.progressContainer.style.display = 'none';
             }
         }
 
-        // 添加更新进度的方法
+        // 添加 updateProgress 方法
         updateProgress(current, total) {
+            console.log(`更新进度: current=${current}, total=${total}`);
             if (this.progressBar) {
                 this.progressBar.value = current;
                 const percent = ((current / total) * 100).toFixed(2);
-                this.progressText.textContent = `下载进度: ${current}/${total} (${percent}%)`;
-            }
-        }
-
-        // 添加响应式样式更新方法
-        updateResponsiveStyles() {
-            const elements = {
-                container: this.container,
-                selectButton: this.selectButton,
-                longPageModeButton: this.longPageModeButton,
-                cancelSelectionButton: this.cancelSelectionButton,
-                chapterListContainer: this.chapterListContainer,
-                progressContainer: this.progressContainer,
-                progressText: this.progressText
-            };
-
-            for (const [key, element] of Object.entries(elements)) {
-                if (element && STYLES[key]) {
-                    applyResponsiveStyles(element, STYLES[key]);
+                if (this.progressText) {
+                    this.progressText.textContent = `下载进度: ${current}/${total} (${percent}%)`;
                 }
-            }
-        }
-
-        // 添加获取章节名称的方法
-        getChapterNameFromUrl(url) {
-            try {
-                // 尝试从URL中提取章节名称
-                const urlObj = new URL(url);
-                const pathParts = urlObj.pathname.split('/');
-                const lastPart = pathParts[pathParts.length - 1];
-
-                // 移除.html后缀
-                const nameWithoutExt = lastPart.replace('.html', '');
-
-                // 尝试解码URL编码的章节名
-                try {
-                    return decodeURIComponent(nameWithoutExt);
-                } catch {
-                    return nameWithoutExt;
-                }
-            } catch (error) {
-                console.error('解析章节名称失败:', error);
-                return `第${chapterLinks.length - index}章`;
             }
         }
     }
 
-    // 5. 下载器类
     class ComicDownloader {
         constructor() {
             try {
+                console.log('开始创建ComicDownloader实例...');
                 this.adapter = getSiteAdapter();
                 this.isLongPageMode = GM_getValue('isLongPageMode', false);
+                this.isDownloading = false;
+                this.abortController = null;
 
                 if (this.adapter.isChapterPage()) {
+                    console.log('当前是章节页面');
                     const imageElements = this.adapter.getImageElements();
                     this.totalPages = imageElements.length;
                     this.chapterName = this.adapter.getChapterName();
 
                     if (this.totalPages > 0) {
+                        console.log(`找到 ${this.totalPages} 页图片`);
                         this.ui = new DownloaderUI(this.totalPages, this.handleDownload.bind(this), this.handleCancel.bind(this));
                         if (this.isLongPageMode) {
                             this.ui.isLongPageMode = true;
                             this.ui.longPageModeButton.textContent = '切换普通模式';
                             this.ui.longPageModeButton.style.backgroundColor = '#4CAF50';
                         }
+                    } else {
+                        console.log('未找到图片元素');
                     }
                 } else if (this.adapter.isDirectoryPage()) {
-                    this.ui = new ChapterSelectorUI(this.handleDownloadSelected.bind(this), this.adapter);
+                    console.log('当前是目录页面');
+                    this.ui = new ChapterSelectorUI({
+                        adapter: this.adapter,
+                        onDownloadSelected: this.handleDownloadSelected.bind(this),
+                        onToggleLongPageMode: (isLong) => { this.isLongPageMode = isLong; },
+                        onCancel: () => {},
+                        onProgress: (current, total) => this.ui.updateProgress(current, total),
+                        onLoading: (isLoading, total) => this.ui.setLoading(isLoading, total),
+                        onComplete: () => {},
+                        onError: (err) => this.ui.showError && this.ui.showError(err)
+                    });
+                    // 确保UI立即显示
+                    if (this.ui && this.ui.container) {
+                        this.ui.container.style.display = 'flex';
+                        this.ui.chapterListContainer.style.display = 'block';
+                    }
                 }
             } catch (error) {
                 console.error('初始化失败:', error);
             }
         }
 
-        // 处理下载选中章节
-        // 在 ComicDownloader 类中添加新方法
-        async loadChapterHtml(url) {
-            return new Promise((resolve, reject) => {
-                const tab = GM_openInTab(url, { active: false, insert: true });
-
-                // 创建一个消息监听器
-                const messageHandler = function (event) {
-                    if (event.data.type === 'chapterData' && event.data.url === url) {
-                        window.removeEventListener('message', messageHandler);
-                        tab.close();
-                        resolve(event.data.html);
-                    }
-                };
-
-                window.addEventListener('message', messageHandler);
-
-                // 5秒后超时
-                setTimeout(() => {
-                    window.removeEventListener('message', messageHandler);
-                    tab.close();
-                    reject(new Error('加载章节超时'));
-                }, 5000);
-            });
-        }
-
-        async handleDownloadSelected() {
-            const selectedChapters = this.ui.selectedChapters;
-            if (selectedChapters.size === 0) {
-                this.ui.selectButton.textContent = '请选择至少一个章节';
-                setTimeout(() => {
-                    this.ui.selectButton.textContent = '选择章节下载';
-                }, 2000);
-                return;
-            }
-
-            try {
-                const chapterLinks = await this.adapter.getChapterLinks();
-                const selectedChapterUrls = Array.from(selectedChapters).map(index => chapterLinks[index].url);
-
-                this.ui.setLoading(true, selectedChapterUrls.length);
-                this.isLongPageMode = this.ui.isLongPageMode;
-
-                for (let i = 0; i < selectedChapterUrls.length; i++) {
-                    const url = selectedChapterUrls[i];
-                    try {
-                        const sessionId = Date.now().toString();
-                        GM_setValue('autoDownload', true);
-                        GM_setValue('sessionId', sessionId);
-                        GM_setValue('downloadStatus', 'pending');
-                        GM_setValue('isLongPageMode', this.isLongPageMode);
-
-                        const tab = GM_openInTab(url, {
-                            active: true,
-                            insert: true,
-                            setParent: true
-                        });
-
-                        await new Promise((resolve, reject) => {
-                            const maxRetries = 3;
-                            let retryCount = 0;
-                            let timeout;
-
-                            const checkStatus = () => {
-                                const status = GM_getValue('downloadStatus', '');
-                                if (status === 'complete') {
-                                    clearTimeout(timeout);
-                                    GM_setValue('downloadStatus', '');
-                                    GM_setValue('autoDownload', false);
-                                    resolve();
-                                    return true;
-                                }
-                                return false;
-                            };
-
-                            const startCheck = () => {
-                                timeout = setTimeout(() => {
-                                    if (!checkStatus() && retryCount < maxRetries) {
-                                        retryCount++;
-                                        tab.activate();
-                                        startCheck();
-                                    } else if (retryCount >= maxRetries) {
-                                        GM_setValue('downloadStatus', '');
-                                        reject(new Error('下载超时，已达到最大重试次数'));
-                                    }
-                                }, 30000);
-                            };
-
-                            startCheck();
-
-                            const checkInterval = setInterval(() => {
-                                if (checkStatus()) {
-                                    clearInterval(checkInterval);
-                                }
-                            }, 1000);
-                        });
-
-                        tab.close();
-                        this.ui.updateProgress(i + 1, selectedChapterUrls.length);
-                    } catch (error) {
-                        console.error(`章节下载失败: ${url}`, error);
-                    }
-                }
-
-                this.ui.setLoading(false);
-                this.ui.selectButton.textContent = '下载完成！';
-                setTimeout(() => {
-                    this.ui.selectButton.textContent = '选择章节下载';
-                }, 3000);
-            } catch (error) {
-                console.error('批量下载失败:', error);
-                this.ui.setLoading(false);
-                this.ui.selectButton.textContent = '下载失败，请查看控制台';
-                setTimeout(() => {
-                    this.ui.selectButton.textContent = '选择章节下载';
-                }, 3000);
-            }
-        }
-
-        // 从文档中提取图片URL
-        extractImageUrlsFromDoc(doc) {
-            const imageElements = doc.querySelectorAll('div.chapter-img-box img');
-            return Array.from(imageElements).map(img => img.src || img.dataset.src);
-        }
-
-        // 下载单个章节的所有图片
-        async downloadChapterImages(imageUrls) {
-            const images = [];
-            for (const url of imageUrls) {
-                try {
-                    const imageData = await this.downloadImage(url);
-                    images.push(imageData);
-                } catch (error) {
-                    console.error(`图片下载失败: ${url}`, error);
-                }
-            }
-            return images;
-        }
         async handleDownload() {
             if (this.isDownloading) {
                 alert('当前正在下载，请稍后再试');
@@ -1346,6 +1213,101 @@
             console.error(message, error);
             alert(`${message}，请查看控制台了解详情`);
         }
+
+        // 添加处理选中章节下载的方法
+        async handleDownloadSelected() {
+            console.log('开始处理选中章节下载...');
+            const selectedChapters = this.ui.selectedChapters;
+            if (selectedChapters.size === 0) {
+                this.ui.selectButton.textContent = '请选择至少一个章节';
+                setTimeout(() => {
+                    this.ui.selectButton.textContent = '选择章节下载';
+                }, 2000);
+                return;
+            }
+
+            try {
+                const chapterLinks = await this.adapter.getChapterLinks();
+                const selectedChapterUrls = Array.from(selectedChapters).map(index => chapterLinks[index].url);
+
+                this.ui.setLoading(true, selectedChapterUrls.length);
+                this.isLongPageMode = this.ui.isLongPageMode;
+
+                for (let i = 0; i < selectedChapterUrls.length; i++) {
+                    const url = selectedChapterUrls[i];
+                    try {
+                        const sessionId = Date.now().toString();
+                        GM_setValue('autoDownload', true);
+                        GM_setValue('sessionId', sessionId);
+                        GM_setValue('downloadStatus', 'pending');
+                        GM_setValue('isLongPageMode', this.isLongPageMode);
+
+                        const tab = GM_openInTab(url, {
+                            active: true,
+                            insert: true,
+                            setParent: true
+                        });
+
+                        await new Promise((resolve, reject) => {
+                            const maxRetries = 3;
+                            let retryCount = 0;
+                            let timeout;
+
+                            const checkStatus = () => {
+                                const status = GM_getValue('downloadStatus', '');
+                                if (status === 'complete') {
+                                    clearTimeout(timeout);
+                                    GM_setValue('downloadStatus', '');
+                                    GM_setValue('autoDownload', false);
+                                    resolve();
+                                    return true;
+                                }
+                                return false;
+                            };
+
+                            const startCheck = () => {
+                                timeout = setTimeout(() => {
+                                    if (!checkStatus() && retryCount < maxRetries) {
+                                        retryCount++;
+                                        tab.activate();
+                                        startCheck();
+                                    } else if (retryCount >= maxRetries) {
+                                        GM_setValue('downloadStatus', '');
+                                        reject(new Error('下载超时，已达到最大重试次数'));
+                                    }
+                                }, 30000);
+                            };
+
+                            startCheck();
+
+                            const checkInterval = setInterval(() => {
+                                if (checkStatus()) {
+                                    clearInterval(checkInterval);
+                                }
+                            }, 1000);
+                        });
+
+                        tab.close();
+                        this.ui.updateProgress(i + 1, selectedChapterUrls.length);
+                    } catch (error) {
+                        console.error(`章节下载失败: ${url}`, error);
+                    }
+                }
+
+                this.ui.setLoading(false);
+                this.ui.selectButton.textContent = '下载完成！';
+                setTimeout(() => {
+                    this.ui.selectButton.textContent = '选择章节下载';
+                }, 3000);
+            } catch (error) {
+                console.error('批量下载失败:', error);
+                this.ui.setLoading(false);
+                this.ui.selectButton.textContent = '下载失败，请查看控制台';
+                setTimeout(() => {
+                    this.ui.selectButton.textContent = '选择章节下载';
+                }, 3000);
+            }
+        }
     }
 
     // 6. 初始化
@@ -1378,6 +1340,17 @@
                     }
                 }, 2000);
             }
+
+            // 确保UI显示
+            if (window.comicDownloader.ui) {
+                console.log('UI已初始化');
+                if (window.comicDownloader.adapter.isDirectoryPage()) {
+                    console.log('当前是目录页面');
+                    window.comicDownloader.ui.chapterListContainer.style.display = 'block';
+                }
+            } else {
+                console.error('UI初始化失败');
+            }
         } catch (error) {
             console.error('初始化失败:', error);
         }
@@ -1385,8 +1358,13 @@
 
     // 确保在页面完全加载后再初始化
     if (document.readyState === 'complete') {
+        console.log('页面已加载完成，立即初始化');
         initialize();
     } else {
-        window.addEventListener('load', initialize);
+        console.log('等待页面加载完成...');
+        window.addEventListener('load', () => {
+            console.log('页面加载完成，开始初始化');
+            initialize();
+        });
     }
 })();
