@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         网页漫画下载为pdf格式
 // @namespace    http://tampermonkey.net/
-// @version      2.4.0
+// @version      2.4.1
 // @description  将网页漫画下载为pdf方便阅读，目前仅适用于如漫画[http://www.rumanhua1.com/]
 // @author       MornLight
 // @match        http://m.rumanhua1.com/*
 // @match        http://www.rumanhua1.com/*
 // @match        https://www.rumanhua.org/*
+// @match        https://mangapark.net/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=greasyfork.org
 // @grant        GM_xmlhttpRequest
 // @grant        GM_openInTab
@@ -51,7 +52,9 @@
                 padding: '8px',
                 gap: '6px',
                 borderRadius: '10px',
-            }
+            },
+            backdropFilter: 'blur(10px)',
+            transition: 'all 0.3s ease',
         },
         button: {
             padding: '8px 0',
@@ -80,6 +83,13 @@
                 borderRadius: '8px',
                 margin: '3px 0',
                 minHeight: '28px',
+            },
+            background: 'linear-gradient(45deg, #4CAF50, #45a049)',
+            transition: 'all 0.3s ease',
+            ':hover': {
+                background: 'linear-gradient(45deg, #45a049, #4CAF50)',
+                transform: 'translateY(-2px)',
+                boxShadow: '0 4px 15px rgba(76,175,80,0.3)'
             }
         },
         cancelButton: {
@@ -101,6 +111,12 @@
                 borderRadius: '8px',
                 margin: '3px 0',
                 minHeight: '28px',
+            },
+            background: 'linear-gradient(45deg, #f44336, #e53935)',
+            ':hover': {
+                background: 'linear-gradient(45deg, #e53935, #f44336)',
+                transform: 'translateY(-2px)',
+                boxShadow: '0 4px 15px rgba(244,67,54,0.3)'
             }
         },
         buttonGroup: {
@@ -122,7 +138,9 @@
                 width: '100%',
                 padding: '4px 0 1px 0',
                 borderRadius: '7px',
-            }
+            },
+            backdropFilter: 'blur(5px)',
+            border: '1px solid rgba(255,255,255,0.1)'
         },
         infoText: {
             color: '#4a5568',
@@ -283,7 +301,7 @@
 
         isDirectoryPage() {
             const url = window.location.href;
-            return url.includes('www.rumanhua1.com') && !this.isChapterPage();
+            return url.includes('www.rumanhua1.com/') && !this.isChapterPage();
         }
 
         async getChapterLinks() {
@@ -464,6 +482,118 @@
         }
     }
 
+    // 添加Mangapark适配器
+    class MangaparkAdapter extends SiteAdapter {
+        isChapterPage() {
+            // 匹配 https://mangapark.net/title/357480-en-the-31st-piece-turns-the-tables/9864935-chapter-85-season-3-start 类型URL
+            const chapterPagePattern = /https:\/\/mangapark\.net\/title\/+[^\/]+\/+[^\/]/;
+            return chapterPagePattern.test(window.location.href);
+        }
+
+        isDirectoryPage() {
+            // 目录页匹配 /title/ 开头但不包含 /chapter- 的URL
+            const url = window.location.href;
+            return url.includes('https://mangapark.net/title/') && !this.isChapterPage();
+        }
+
+        async getChapterLinks() {
+            const waitForChapterList = () => {
+                return new Promise((resolve, reject) => {
+                    let attempts = 0;
+                    const maxAttempts = 10;
+
+                    const checkForList = () => {
+                        // Mangapark的章节列表选择器
+                        const selectors = [
+                            'div[data-name="chapter-list"] div.scrollable-panel div.group div.px-2 > div.space-x-1 a',
+                        ];
+
+                        for (const selector of selectors) {
+                            const elements = document.querySelectorAll(selector);
+                            if (elements.length > 0) {
+                                resolve(elements);
+                                return;
+                            }
+                        }
+
+                        attempts++;
+                        if (attempts >= maxAttempts) {
+                            reject(new Error('未找到章节列表'));
+                            return;
+                        }
+
+                        setTimeout(checkForList, 500);
+                    };
+
+                    checkForList();
+                });
+            };
+
+            try {
+                const chapterElements = await waitForChapterList();
+                const links = Array.from(chapterElements).map(element => {
+                    const href = element.getAttribute('href');
+                    // 确保URL是完整的
+                    const url = href.startsWith('http') ? href : 'https://mangapark.net' + href;
+                    const name = element.textContent.trim();
+                    return { url, name };
+                });
+                // 按照章节顺序排序
+                return links.reverse(); // Mangapark列表通常是倒序的
+            } catch (error) {
+                console.error('获取章节列表失败:', error);
+                return [];
+            }
+        }
+
+        getChapterName() {
+            // 尝试多种选择器获取章节名
+            const selectors = [
+                'div.text-base-content h6.text-lg span'
+            ];
+
+            for (const selector of selectors) {
+                const element = document.querySelector(selector);
+                if (element) {
+                    return element.textContent.trim();
+                }
+            }
+
+            // 如果找不到，从URL中提取
+            const urlParts = window.location.pathname.split('/');
+            const chapterPart = urlParts[urlParts.length - 1];
+            return chapterPart.replace(/-\d+-/, ' ').replace(/-/g, ' ');
+        }
+
+        getImageElements() {
+            // 查找所有带有background-image属性的div元素
+            return document.querySelectorAll('div[data-name="image-show"] img, div[data-name="image-item"] img');
+        }
+
+        getImageUrl(imgElement) {
+            if (!imgElement) return null;
+
+            // 优先使用data-src或data-url属性，然后是src
+            const src = imgElement.dataset.src || imgElement.dataset.url || imgElement.src;
+            if (src) {
+                let imageUrl = src;
+
+                // 处理相对URL
+                if (imageUrl.startsWith('//')) {
+                    imageUrl = 'https:' + imageUrl;
+                } else if (imageUrl.startsWith('/')) {
+                    imageUrl = 'https://mangapark.net' + imageUrl;
+                }
+
+                if (imageUrl.startsWith('blob:')) {
+                    return imageUrl;
+                }
+
+                return imageUrl;
+            }
+        }
+    }
+
     // 3. 获取适配器的工厂函数
     function getSiteAdapter() {
         const url = window.location.href;
@@ -474,6 +604,9 @@
                 return new RumanhuaAdapter();
             case url.includes('https://www.rumanhua.org/'):
                 return new RumanhuaOrgAdapter();
+            // 添加Mangapark网站支持
+            case url.includes('https://mangapark.net/'):
+                return new MangaparkAdapter();
             default:
                 throw new Error('不支持的页面格式');
         }
@@ -507,6 +640,7 @@
             container.appendChild(this.longPageModeButton);
 
             this.downloadButton = this.createButton('下载本章节', () => this.onDownload(1, this.totalPages));
+
             this.cancelButton = this.createButton('取消下载', () => {
                 this.onCancel();
                 this.infoText.textContent = '下载已取消';
@@ -514,6 +648,9 @@
                     this.infoText.textContent = `本章节共 ${this.totalPages} 页`;
                 }, 2000);
             }, true);
+
+            // 默认隐藏取消按钮
+            this.cancelButton.style.display = 'none';
 
             // 创建进度容器
             this.progressContainer = this.createElement('div', STYLES.progressContainer);
@@ -544,10 +681,21 @@
             this.downloadButton.style.backgroundColor = isLoading ? '#999' : '#4CAF50';
             this.downloadButton.style.cursor = isLoading ? 'not-allowed' : 'pointer';
             this.downloadButton.textContent = isLoading ? '下载中...' : '下载本章节';
-            this.downloadButton.style.display = isLoading ? 'none' : 'block'; // 修改：控制下载按钮显示
-            this.cancelButton.style.display = showCancel ? 'block' : 'none';
-            this.progressContainer.style.display = isLoading ? 'block' : 'none';
-            this.infoText.style.display = isLoading ? 'none' : 'block';
+
+            // 修复按钮显示逻辑
+            if (isLoading) {
+                this.downloadButton.style.display = 'none';
+                this.cancelButton.style.display = showCancel ? 'block' : 'none';
+                this.progressContainer.style.display = 'block';
+                this.infoText.style.display = 'none';
+                this.longPageModeButton.style.display = 'none'; // 下载时隐藏长图模式按钮
+            } else {
+                this.downloadButton.style.display = 'block';
+                this.cancelButton.style.display = 'none';
+                this.progressContainer.style.display = 'none';
+                this.infoText.style.display = 'block';
+                this.longPageModeButton.style.display = 'block';
+            }
         }
 
 
@@ -641,6 +789,7 @@
             this.isLongPageMode = false;
             this.selectionStart = null;
             this.selectionEnd = null;
+            this.isDownloading = false; // 添加下载状态标志
             this.createUI();
             this.chapterListContainer.style.display = 'block';
             this.initChapterList();
@@ -682,6 +831,7 @@
                 }
             });
 
+
             // 添加长图模式切换按钮
             this.longPageModeButton = this.createElement('button', {
                 ...STYLES.button,
@@ -720,9 +870,16 @@
                 }
             }, '返回');
             this.cancelSelectionButton.addEventListener('click', () => {
-                this.cancelSelectionMode();
-                this.onCancel && this.onCancel();
+                if (this.isDownloading) {
+                    // 如果正在下载，取消下载
+                    this.cancelDownload();
+                } else {
+                    // 否则，退出选择模式
+                    this.cancelSelectionMode();
+                    this.onCancel && this.onCancel();
+                }
             });
+
 
             // 创建按钮组容器并添加按钮
             this.buttonGroup = this.createElement('div', STYLES.buttonGroup);
@@ -785,16 +942,15 @@
                 this.chapterListContainer.style.display = 'block';
                 this.cancelSelectionButton.style.display = 'block';
                 this.selectButton.textContent = '下载选中章节';
+                this.longPageModeButton.style.display = 'block'; // 确保长图按钮显示
             } else {
                 console.log('退出选择模式，检查是否有选中章节');
                 if (this.selectedChapters.size > 0) {
                     console.log(`开始下载 ${this.selectedChapters.size} 个选中章节`);
-                    this.chapterListContainer.style.display = 'none';
-                    this.cancelSelectionButton.style.display = 'none';
-                    // 调用下载处理函数
+                    // 不立即隐藏,等下载开始后由setLoading控制
                     this.onDownloadSelected();
                 } else {
-                    console.log('无选中章节，返回选择模式');
+                    console.log('无选中章节，返回初始状态');
                     this.chapterListContainer.style.display = 'none';
                     this.cancelSelectionButton.style.display = 'none';
                     this.selectButton.textContent = '选择章节下载';
@@ -811,6 +967,29 @@
             this.selectionStart = null;
             this.selectionEnd = null;
             this.updateChapterSelectionUI();
+        }
+        cancelDownload() {
+            if (confirm('确定要取消当前的批量下载吗？')) {
+                console.log('用户取消批量下载');
+
+                // 设置取消标志
+                GM_setValue('cancelBatchDownload', true);
+
+                // 重置UI状态
+                this.isDownloading = false;
+                this.setLoading(false);
+
+                // 显示取消提示
+                this.selectButton.textContent = '下载已取消';
+                this.selectButton.style.backgroundColor = '#ff9800';
+                this.selectButton.disabled = true;
+
+                setTimeout(() => {
+                    this.selectButton.textContent = '选择章节下载';
+                    this.selectButton.style.backgroundColor = '#4CAF50';
+                    this.selectButton.disabled = false;
+                }, 2000);
+            }
         }
 
         async initChapterList() {
@@ -1012,13 +1191,21 @@
         // 添加 setLoading 方法
         setLoading(isLoading, totalChapters = 0) {
             console.log(`设置加载状态: isLoading=${isLoading}, totalChapters=${totalChapters}`);
-            this.selectButton.disabled = isLoading;
-            this.selectButton.style.backgroundColor = isLoading ? '#999' : '#4CAF50';
-            this.selectButton.style.cursor = isLoading ? 'not-allowed' : 'pointer';
-            this.longPageModeButton.style.display = isLoading ? 'none' : 'block';
+            this.isDownloading = isLoading;
 
             if (isLoading) {
+                // 下载中状态
+                this.selectButton.disabled = true;
+                this.selectButton.style.backgroundColor = '#999';
+                this.selectButton.style.cursor = 'not-allowed';
                 this.selectButton.textContent = '下载中...';
+
+                this.longPageModeButton.style.display = 'none';
+                // 取消按钮改为显示"取消下载"
+                this.cancelSelectionButton.style.display = 'block';
+                this.cancelSelectionButton.textContent = '取消下载';
+                this.cancelSelectionButton.style.backgroundColor = '#f44336';
+
                 this.chapterListContainer.style.display = 'none';
                 this.progressContainer.style.display = 'block';
 
@@ -1030,19 +1217,61 @@
                     this.progressText.textContent = `准备下载 ${totalChapters} 个章节...`;
                 }
             } else {
+                // 恢复初始状态
+                this.selectButton.disabled = false;
+                this.selectButton.style.backgroundColor = '#4CAF50';
+                this.selectButton.style.cursor = 'pointer';
                 this.selectButton.textContent = '选择章节下载';
+
+                this.longPageModeButton.style.display = 'block';
+                this.cancelSelectionButton.style.display = 'none';
+                this.cancelSelectionButton.textContent = '返回'; // 恢复默认文本
+
+                this.chapterListContainer.style.display = 'none';
                 this.progressContainer.style.display = 'none';
+
+                // 重置选择状态
+                this.isSelectionMode = false;
+                this.selectedChapters.clear();
+                this.selectionStart = null;
+                this.selectionEnd = null;
             }
         }
 
         // 添加 updateProgress 方法
-        updateProgress(current, total) {
+        updateProgress(current, total, currentChapter = '', currentImage = 0, totalImages = 0) {
             console.log(`更新进度: current=${current}, total=${total}`);
             if (this.progressBar) {
                 this.progressBar.value = current;
-                const percent = ((current / total) * 100).toFixed(2);
+                const percent = ((current / total) * 100).toFixed(1);
+
                 if (this.progressText) {
-                    this.progressText.textContent = `下载进度: ${current}/${total} (${percent}%)`;
+                    let progressHTML = `
+                <div style="text-align: center; line-height: 1.6; padding: 8px;">
+                    <div style="font-size: 16px; font-weight: bold; color: #4CAF50;">
+                        正在下载第 ${current}/${total} 个章节
+                    </div>
+                    <div style="font-size: 14px; color: #666; margin-top: 5px;">
+                        进度: ${percent}%
+                    </div>
+            `;
+
+                    // 如果有当前章节的图片信息,显示出来
+                    if (currentChapter && totalImages > 0) {
+                        progressHTML += `
+                    <div style="font-size: 12px; color: #999; margin-top: 5px;">
+                        ${currentChapter}: ${currentImage}/${totalImages} 张图片
+                    </div>
+                `;
+                    }
+
+                    progressHTML += `</div>`;
+                    this.progressText.innerHTML = progressHTML;
+                }
+
+                // 更新按钮文本
+                if (this.selectButton) {
+                    this.selectButton.textContent = `下载中... (${current}/${total})`;
                 }
             }
         }
@@ -1105,23 +1334,38 @@
 
         async handleDownload() {
             if (this.isDownloading) {
-                alert('当前正在下载，请稍后再试');
+                alert('当前正在下载,请稍后再试');
                 return;
             }
 
             try {
                 this.isDownloading = true;
                 this.abortController = new AbortController();
-                this.ui.setLoading(true, true);
-                // 传递长图模式状态
+                this.ui.setLoading(true, true); // 显示取消按钮
                 this.isLongPageMode = this.ui.isLongPageMode;
                 await this.downloadComic();
+
+                // 下载成功提示
+                this.ui.infoText.textContent = '下载完成!';
+                this.ui.infoText.style.display = 'block';
+                setTimeout(() => {
+                    this.ui.infoText.textContent = `本章节共 ${this.totalPages} 页`;
+                }, 3000);
+
             } catch (error) {
                 if (error.name === 'AbortError') {
                     console.log('下载已取消');
-                    alert('下载已取消');
+                    // 取消时不显示alert,已经在handleCancel中处理
                 } else {
                     this.handleError(error, '下载失败');
+                    // 显示错误信息
+                    this.ui.infoText.textContent = '下载失败,请重试';
+                    this.ui.infoText.style.display = 'block';
+                    this.ui.infoText.style.color = '#f44336';
+                    setTimeout(() => {
+                        this.ui.infoText.textContent = `本章节共 ${this.totalPages} 页`;
+                        this.ui.infoText.style.color = '#4a5568';
+                    }, 3000);
                 }
             } finally {
                 this.isDownloading = false;
@@ -1132,13 +1376,18 @@
 
         handleCancel() {
             if (this.abortController) {
-                this.abortController.abort(); // 中断下载
-                this.isDownloading = false; // 重置下载状态
-                this.ui.setLoading(false, false); // 重置UI状态
-                // 显示取消消息，然后恢复下载按钮
+                this.abortController.abort();
+                this.isDownloading = false;
+                this.ui.setLoading(false, false);
+
+                // 显示取消消息
+                this.ui.infoText.textContent = '下载已取消';
+                this.ui.infoText.style.display = 'block';
+                this.ui.infoText.style.color = '#ff9800';
+
                 setTimeout(() => {
-                    this.ui.downloadButton.style.display = 'block';
-                    this.ui.downloadButton.disabled = false;
+                    this.ui.infoText.textContent = `本章节共 ${this.totalPages} 页`;
+                    this.ui.infoText.style.color = '#4a5568';
                 }, 2000);
             }
         }
@@ -1156,6 +1405,9 @@
             const imageElements = this.adapter.getImageElements();
             const downloadResults = new Array(end - start + 1);
             const downloadPromises = [];
+
+            // 存储总图片数,供目录页面读取
+            GM_setValue('totalImages', end - start + 1);
 
             for (let i = 0; i < imageElements.length; i++) {
                 const pageNumber = i + 1;
@@ -1180,49 +1432,64 @@
                         .then(imgData => {
                             downloadResults[arrayIndex] = imgData;
                             this.ui.updateProgress(pageNumber);
+
+                            // 更新当前下载的图片数,供目录页面读取
+                            GM_setValue('currentImage', pageNumber);
+
                             console.log(`第 ${pageNumber} 页下载完成`);
                         })
                         .catch(error => {
                             console.error(`第 ${pageNumber} 页下载失败:`, error);
                             downloadResults[arrayIndex] = null;
+
+                            // 即使失败也更新进度
+                            GM_setValue('currentImage', pageNumber);
                         })
                 );
             } else {
                 console.warn(`第 ${pageNumber} 页图片URL无效`);
             }
         }
-
-        downloadImage(url) {
+        downloadImage(imgUrl) {
             return new Promise((resolve, reject) => {
-                if (this.abortController?.signal?.aborted) {
-                    reject(new DOMException('下载已取消', 'AbortError'));
+                // 检查是否被取消
+                if (this.abortController && this.abortController.signal.aborted) {
+                    reject(new Error('AbortError'));
                     return;
                 }
 
-                console.log(`开始下载图片: ${url}`);
-                const request = GM_xmlhttpRequest({
+                console.log(`开始下载图片: ${imgUrl}`);
+
+                GM_xmlhttpRequest({
                     method: 'GET',
-                    url: url,
+                    url: imgUrl,
                     responseType: 'blob',
                     headers: {
                         'Referer': window.location.href,
-                        'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8'
+                        'User-Agent': navigator.userAgent
                     },
-                    onload: response => {
-                        console.log(`图片下载成功: ${url}`);
-                        this.handleImageResponse(response, resolve, reject);
-                    },
-                    onerror: error => {
-                        console.error(`图片下载失败: ${url}`, error);
-                        reject(error);
-                    }
-                });
+                    onload: (response) => {
+                        if (this.abortController && this.abortController.signal.aborted) {
+                            reject(new Error('AbortError'));
+                            return;
+                        }
 
-                // 监听中断信号
-                this.abortController?.signal?.addEventListener('abort', () => {
-                    console.log(`取消图片下载: ${url}`);
-                    request.abort();  // 中断请求
-                    reject(new DOMException('下载已取消', 'AbortError'));
+                        if (response.status === 200) {
+                            this.handleImageResponse(response, resolve, reject);
+                        } else {
+                            console.error(`图片下载失败，状态码: ${response.status}`);
+                            reject(new Error(`HTTP ${response.status}`));
+                        }
+                    },
+                    onerror: (error) => {
+                        console.error('图片下载出错:', error);
+                        reject(error);
+                    },
+                    ontimeout: () => {
+                        console.error('图片下载超时');
+                        reject(new Error('下载超时'));
+                    },
+                    timeout: 30000 // 30秒超时
                 });
             });
         }
@@ -1265,55 +1532,169 @@
         }
 
         async generateLongPagePDF(pdf, images, sizes) {
-            console.log('开始生成长图PDF...');
-            // 计算所有图片的总高度
+            console.log('开始生成长图PDF（分页模式）...');
             const A4_width = 210;
-            let totalHeight = 0;
-            let maxWidth = 0;
+            const MAX_PAGE_HEIGHT = 20000; // 单页最大高度（20米），可根据需要调整
 
-            // 计算缩放比例和总高度
-            for (let i = 0; i < sizes.length; i++) {
-                const scaleFactor = A4_width / sizes[i].width;
-                const scaledHeight = sizes[i].height * scaleFactor;
-                totalHeight += scaledHeight;
-                maxWidth = Math.max(maxWidth, sizes[i].width * scaleFactor);
-            }
-
-            console.log(`PDF尺寸: 宽度=${A4_width}, 高度=${totalHeight}`);
-            // 设置PDF页面大小
-            pdf.internal.pageSize.width = A4_width;
-            pdf.internal.pageSize.height = totalHeight;
-
-            // 垂直拼接所有图片
-            let currentY = 0;
+            // 先过滤掉无效的图片
+            const validIndices = [];
             for (let i = 0; i < images.length; i++) {
-                const img = new Image();
-                img.src = images[i];
-
-                await new Promise(resolve => {
-                    img.onload = () => {
-                        const scaleFactor = A4_width / sizes[i].width;
-                        const scaledHeight = sizes[i].height * scaleFactor;
-
-                        pdf.addImage(
-                            images[i],
-                            'JPEG',
-                            0,
-                            currentY,
-                            A4_width,
-                            scaledHeight
-                        );
-
-                        currentY += scaledHeight;
-                        this.ui.updateProgress(i + 1);
-                        console.log(`已添加第 ${i + 1} 张图片到长图PDF，位置Y=${currentY}`);
-                        resolve();
-                    };
-                });
+                if (images[i] && images[i] !== 'null' && images[i] !== 'undefined') {
+                    validIndices.push(i);
+                } else {
+                    console.warn(`第 ${i + 1} 张图片数据无效，已跳过`);
+                }
             }
-            console.log('长图PDF生成完成');
-        }
 
+            if (validIndices.length === 0) {
+                throw new Error('没有有效的图片可以生成PDF');
+            }
+
+            console.log(`有效图片数量: ${validIndices.length}/${images.length}`);
+
+            // 按高度分组图片到不同页面
+            const pages = [];
+            let currentPage = {
+                images: [],
+                indices: [],
+                totalHeight: 0
+            };
+
+            for (const idx of validIndices) {
+                const scaleFactor = A4_width / sizes[idx].width;
+                const scaledHeight = sizes[idx].height * scaleFactor;
+
+                // 如果当前页面加上这张图片会超过最大高度，且当前页面不为空
+                if (currentPage.totalHeight + scaledHeight > MAX_PAGE_HEIGHT && currentPage.images.length > 0) {
+                    // 保存当前页面
+                    pages.push(currentPage);
+                    console.log(`页面 ${pages.length}: 包含 ${currentPage.images.length} 张图片，总高度 ${currentPage.totalHeight.toFixed(2)}mm`);
+
+                    // 创建新页面
+                    currentPage = {
+                        images: [],
+                        indices: [],
+                        totalHeight: 0
+                    };
+                }
+
+                // 将图片添加到当前页面
+                currentPage.images.push(images[idx]);
+                currentPage.indices.push(idx);
+                currentPage.totalHeight += scaledHeight;
+            }
+
+            // 添加最后一页
+            if (currentPage.images.length > 0) {
+                pages.push(currentPage);
+                console.log(`页面 ${pages.length}: 包含 ${currentPage.images.length} 张图片，总高度 ${currentPage.totalHeight.toFixed(2)}mm`);
+            }
+
+            console.log(`总共分为 ${pages.length} 页`);
+
+            // 删除默认创建的第一页
+            pdf.deletePage(1);
+
+            // 为每一页生成PDF
+            let totalProcessed = 0;
+            for (let pageNum = 0; pageNum < pages.length; pageNum++) {
+                const page = pages[pageNum];
+                console.log(`开始处理第 ${pageNum + 1}/${pages.length} 页PDF...`);
+
+                // 创建新页面
+                pdf.addPage([A4_width, page.totalHeight], 'portrait');
+
+                // 在当前页面垂直拼接图片
+                let currentY = 0;
+                for (let i = 0; i < page.images.length; i++) {
+                    const imgIdx = page.indices[i];
+
+                    await new Promise((resolve, reject) => {
+                        const img = new Image();
+                        let isResolved = false;
+
+                        const cleanup = () => {
+                            img.onload = null;
+                            img.onerror = null;
+                            img.src = '';
+                        };
+
+                        img.onload = () => {
+                            if (isResolved) return;
+                            isResolved = true;
+
+                            try {
+                                const scaleFactor = A4_width / sizes[imgIdx].width;
+                                const scaledHeight = sizes[imgIdx].height * scaleFactor;
+
+                                console.log(`页面${pageNum + 1} - 添加第 ${i + 1}/${page.images.length} 张图片:`, {
+                                    原始尺寸: `${sizes[imgIdx].width}x${sizes[imgIdx].height}`,
+                                    缩放后尺寸: `${A4_width}x${scaledHeight.toFixed(2)}`,
+                                    Y坐标: currentY.toFixed(2)
+                                });
+
+                                // 添加图片到 PDF
+                                pdf.addImage(
+                                    page.images[i],
+                                    'JPEG',
+                                    0,
+                                    currentY,
+                                    A4_width,
+                                    scaledHeight,
+                                    `page${pageNum}_image${i}`, // 唯一别名
+                                    'FAST'
+                                );
+
+                                currentY += scaledHeight;
+                                totalProcessed++;
+                                this.ui.updateProgress(totalProcessed);
+
+                                cleanup();
+
+                                // 添加小延迟
+                                setTimeout(resolve, 10);
+                            } catch (error) {
+                                console.error(`页面${pageNum + 1} - 添加第 ${i + 1} 张图片失败:`, error);
+                                cleanup();
+                                reject(error);
+                            }
+                        };
+
+                        img.onerror = (error) => {
+                            if (isResolved) return;
+                            isResolved = true;
+
+                            console.error(`页面${pageNum + 1} - 加载第 ${i + 1} 张图片失败:`, error);
+                            totalProcessed++;
+                            this.ui.updateProgress(totalProcessed);
+                            cleanup();
+                            resolve();
+                        };
+
+                        // 设置超时保护
+                        setTimeout(() => {
+                            if (!isResolved) {
+                                console.warn(`页面${pageNum + 1} - 第 ${i + 1} 张图片加载超时`);
+                                isResolved = true;
+                                cleanup();
+                                resolve();
+                            }
+                        }, 5000);
+
+                        img.src = page.images[i];
+                    });
+                }
+
+                console.log(`第 ${pageNum + 1}/${pages.length} 页PDF处理完成，最终高度: ${currentY.toFixed(2)}mm`);
+
+                // 每页处理完后暂停一下
+                if (pageNum < pages.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+            }
+
+            console.log('所有页面处理完成');
+        }
         async getImageSizes(images) {
             return Promise.all(images.map(imgData => {
                 return new Promise(resolve => {
@@ -1362,9 +1743,11 @@
             const selectedChapters = this.ui.selectedChapters;
             if (selectedChapters.size === 0) {
                 console.log('未选择任何章节');
-                this.ui.selectButton.textContent = '请选择至少一个章节';
+                this.ui.selectButton.textContent = '⚠️ 请选择至少一个章节';
+                this.ui.selectButton.style.backgroundColor = '#ff9800';
                 setTimeout(() => {
                     this.ui.selectButton.textContent = '选择章节下载';
+                    this.ui.selectButton.style.backgroundColor = '#4CAF50';
                 }, 2000);
                 return;
             }
@@ -1372,88 +1755,191 @@
             try {
                 const chapterLinks = await this.adapter.getChapterLinks();
                 const selectedChapterUrls = Array.from(selectedChapters).map(index => chapterLinks[index].url);
-                console.log(`准备下载 ${selectedChapterUrls.length} 个章节`);
+                const chapterCount = selectedChapterUrls.length;
 
-                this.ui.setLoading(true, selectedChapterUrls.length);
+                console.log(`准备批量下载 ${chapterCount} 个章节`);
+
+                // 清除取消标志
+                GM_setValue('cancelBatchDownload', false);
+
+                this.ui.setLoading(true, chapterCount);
                 this.isLongPageMode = this.ui.isLongPageMode;
 
+                const batchSessionId = Date.now().toString();
+                GM_setValue('isLongPageMode', this.isLongPageMode);
+                console.log(`创建批量下载会话: ${batchSessionId}`);
+
+                // 存储下载失败的章节
+                const failedChapters = [];
+                const cancelledChapters = [];
+
                 for (let i = 0; i < selectedChapterUrls.length; i++) {
+                    // 检查是否被取消
+                    if (GM_getValue('cancelBatchDownload', false)) {
+                        console.log('检测到取消标志，停止批量下载');
+                        cancelledChapters.push(...selectedChapterUrls.slice(i).map((url, idx) => {
+                            return chapterLinks[Array.from(selectedChapters)[i + idx]].name;
+                        }));
+                        break;
+                    }
+
                     const url = selectedChapterUrls[i];
-                    console.log(`开始下载第 ${i + 1}/${selectedChapterUrls.length} 个章节: ${url}`);
+                    const chapterName = chapterLinks[Array.from(selectedChapters)[i]].name;
+
+                    console.log(`准备下载第 ${i + 1}/${chapterCount} 个章节: ${chapterName}`);
+
+                    // 更新进度 - 显示正在下载哪个章节
+                    this.ui.updateProgress(i, chapterCount, chapterName, 0, 0);
+
                     try {
-                        const sessionId = Date.now().toString();
                         GM_setValue('autoDownload', true);
-                        GM_setValue('sessionId', sessionId);
+                        GM_setValue('sessionId', Date.now().toString());
                         GM_setValue('downloadStatus', 'pending');
-                        GM_setValue('isLongPageMode', this.isLongPageMode);
+                        GM_setValue('currentChapterName', chapterName);
 
                         const tab = GM_openInTab(url, {
-                            active: true,
+                            active: false,
                             insert: true,
                             setParent: true
                         });
 
+                        // 等待下载完成,同时监听图片下载进度
                         await new Promise((resolve, reject) => {
-                            const maxRetries = 3;
-                            let retryCount = 0;
-                            let timeout;
+                            const maxWaitTime = 120000;
+                            const startTime = Date.now();
+                            let resolved = false;
 
                             const checkStatus = () => {
-                                const status = GM_getValue('downloadStatus', '');
-                                if (status === 'complete') {
-                                    clearTimeout(timeout);
+                                if (resolved) return;
+
+                                // 检查是否被取消
+                                if (GM_getValue('cancelBatchDownload', false)) {
+                                    resolved = true;
                                     GM_setValue('downloadStatus', '');
-                                    GM_setValue('autoDownload', false);
-                                    console.log(`第 ${i + 1} 个章节下载完成`);
-                                    resolve();
-                                    return true;
+                                    GM_setValue('currentImage', 0);
+                                    GM_setValue('totalImages', 0);
+                                    console.log('下载被用户取消');
+                                    reject(new Error('用户取消下载'));
+                                    return;
                                 }
-                                return false;
-                            };
 
-                            const startCheck = () => {
-                                timeout = setTimeout(() => {
-                                    if (!checkStatus() && retryCount < maxRetries) {
-                                        retryCount++;
-                                        console.log(`第 ${i + 1} 个章节下载超时，重试第 ${retryCount} 次`);
-                                        tab.activate();
-                                        startCheck();
-                                    } else if (retryCount >= maxRetries) {
-                                        GM_setValue('downloadStatus', '');
-                                        console.error(`第 ${i + 1} 个章节下载失败，已达到最大重试次数`);
-                                        reject(new Error('下载超时，已达到最大重试次数'));
-                                    }
-                                }, 30000);
-                            };
+                                const status = GM_getValue('downloadStatus', '');
+                                const elapsedTime = Date.now() - startTime;
 
-                            startCheck();
+                                // 获取当前图片下载进度
+                                const currentImage = GM_getValue('currentImage', 0);
+                                const totalImages = GM_getValue('totalImages', 0);
+
+                                // 实时更新图片进度
+                                if (totalImages > 0) {
+                                    this.ui.updateProgress(i, chapterCount, chapterName, currentImage, totalImages);
+                                }
+
+                                if (status === 'complete') {
+                                    resolved = true;
+                                    GM_setValue('downloadStatus', '');
+                                    GM_setValue('currentImage', 0);
+                                    GM_setValue('totalImages', 0);
+                                    console.log(`✓ 第 ${i + 1} 个章节下载完成: ${chapterName}`);
+                                    resolve();
+                                } else if (elapsedTime > maxWaitTime) {
+                                    resolved = true;
+                                    GM_setValue('downloadStatus', '');
+                                    GM_setValue('currentImage', 0);
+                                    GM_setValue('totalImages', 0);
+                                    console.warn(`✗ 第 ${i + 1} 个章节下载超时: ${chapterName}`);
+                                    failedChapters.push(chapterName);
+                                    reject(new Error('下载超时'));
+                                }
+                            };
 
                             const checkInterval = setInterval(() => {
-                                if (checkStatus()) {
+                                checkStatus();
+                                if (resolved) {
                                     clearInterval(checkInterval);
                                 }
-                            }, 1000);
+                            }, 500);
                         });
 
-                        tab.close();
-                        this.ui.updateProgress(i + 1, selectedChapterUrls.length);
+                        setTimeout(() => {
+                            try {
+                                tab.close();
+                            } catch (e) {
+                                console.log('标签页可能已关闭');
+                            }
+                        }, 1000);
+
+                        // 更新为完成状态
+                        this.ui.updateProgress(i + 1, chapterCount);
+
+                        if (i < chapterCount - 1) {
+                            await new Promise(resolve => setTimeout(resolve, 2000));
+                        }
+
                     } catch (error) {
-                        console.error(`章节下载失败: ${url}`, error);
+                        if (error.message === '用户取消下载') {
+                            console.log('用户取消下载，跳出循环');
+                            cancelledChapters.push(chapterName);
+                            break;
+                        }
+                        console.error(`✗ 第 ${i + 1} 个章节下载失败: ${chapterName}`, error);
+                        failedChapters.push(chapterName);
                     }
                 }
 
+                // 清除批量下载标志
+                GM_setValue('autoDownload', false);
+                GM_setValue('sessionId', '');
+                GM_setValue('currentChapterName', '');
+                GM_setValue('cancelBatchDownload', false);
+
                 this.ui.setLoading(false);
-                console.log('所有章节下载完成');
-                this.ui.selectButton.textContent = '下载完成！';
+                console.log('批量下载流程结束');
+
+                // 显示完成统计
+                const successCount = chapterCount - failedChapters.length - cancelledChapters.length;
+
+                if (cancelledChapters.length > 0) {
+                    this.ui.selectButton.textContent = `已取消 (完成${successCount}个)`;
+                    this.ui.selectButton.style.backgroundColor = '#ff9800';
+
+                    let message = `批量下载已取消\n\n`;
+                    message += `✓ 已完成: ${successCount}个\n`;
+                    if (failedChapters.length > 0) {
+                        message += `✗ 失败: ${failedChapters.length}个\n`;
+                    }
+                    message += `⊗ 已取消: ${cancelledChapters.length}个`;
+
+                    alert(message);
+                } else if (failedChapters.length === 0) {
+                    this.ui.selectButton.textContent = `🎉 全部完成! (${chapterCount}个章节)`;
+                    this.ui.selectButton.style.backgroundColor = '#4CAF50';
+                } else {
+                    alert(`下载完成!\n成功: ${successCount}个\n失败: ${failedChapters.length}个\n\n失败章节:\n${failedChapters.join('\n')}`);
+                    this.ui.selectButton.textContent = `⚠️ 部分完成 (失败${failedChapters.length}个)`;
+                    this.ui.selectButton.style.backgroundColor = '#ff9800';
+                }
+
+                this.ui.selectButton.disabled = true;
+
                 setTimeout(() => {
                     this.ui.selectButton.textContent = '选择章节下载';
-                }, 3000);
+                    this.ui.selectButton.style.backgroundColor = '#4CAF50';
+                    this.ui.selectButton.disabled = false;
+                }, 5000);
+
             } catch (error) {
                 console.error('批量下载失败:', error);
+                GM_setValue('autoDownload', false);
+                GM_setValue('sessionId', '');
+                GM_setValue('cancelBatchDownload', false);
+
                 this.ui.setLoading(false);
-                this.ui.selectButton.textContent = '下载失败，请查看控制台';
+                this.ui.selectButton.textContent = '❌ 下载失败,请重试';
+                this.ui.selectButton.style.backgroundColor = '#f44336';
                 setTimeout(() => {
                     this.ui.selectButton.textContent = '选择章节下载';
+                    this.ui.selectButton.style.backgroundColor = '#4CAF50';
                 }, 3000);
             }
         }
@@ -1468,11 +1954,21 @@
 
             // 检查是否需要自动下载
             const autoDownload = GM_getValue('autoDownload', false);
-            console.log('自动下载标志:', autoDownload);
+            const sessionId = GM_getValue('sessionId', '');
+            const currentTime = Date.now();
 
-            // 如果是章节页面且需要自动下载
-            if (autoDownload && window.comicDownloader.adapter.isChapterPage()) {
-                console.log('检测到是从目录页面打开的章节页面，准备自动下载');
+            console.log('自动下载标志:', autoDownload);
+            console.log('会话ID:', sessionId);
+
+            // 只有在批量下载流程中才自动下载
+            // 判断条件：1. autoDownload为true 2. sessionId存在且未过期(5分钟内)
+            if (autoDownload &&
+                sessionId &&
+                window.comicDownloader.adapter.isChapterPage() &&
+                (currentTime - parseInt(sessionId)) < 300000) { // 5分钟内有效
+
+                console.log('检测到批量下载流程，准备自动下载');
+
                 // 读取长图模式状态
                 window.comicDownloader.isLongPageMode = GM_getValue('isLongPageMode', false);
 
@@ -1481,13 +1977,19 @@
                         console.log('开始自动下载...');
                         await window.comicDownloader.handleDownload();
                         console.log('自动下载完成，设置状态为 complete');
-
                         GM_setValue('downloadStatus', 'complete');
                     } catch (error) {
                         console.error('自动下载失败:', error);
                         GM_setValue('downloadStatus', 'complete');
                     }
                 }, 2000);
+            } else {
+                // 清除过期的自动下载标志
+                if (autoDownload) {
+                    console.log('清除自动下载标志（非批量下载或已过期）');
+                    GM_setValue('autoDownload', false);
+                    GM_setValue('sessionId', '');
+                }
             }
 
             // 确保UI显示
