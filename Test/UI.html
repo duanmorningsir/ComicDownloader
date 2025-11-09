@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>漫画下载器 - UI设计</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            width: 100%;
+            max-width: 350px;
+            padding: 20px;
+            overflow: hidden;
+        }
+
+        /* ============ 单章节模式 ============ */
+        .chapter-mode {
+            display: none;
+        }
+
+        .chapter-mode.active {
+            display: block;
+        }
+
+        .chapter-header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .chapter-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 4px;
+        }
+
+        .chapter-info {
+            font-size: 12px;
+            color: #999;
+        }
+
+        /* ============ 批量下载模式 ============ */
+        .batch-mode {
+            display: none;
+        }
+
+        .batch-mode.active {
+            display: block;
+        }
+
+        .batch-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .batch-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+
+        .batch-count {
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 4px 12px;
+            border-radius: 16px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        /* ============ 进度显示 ============ */
+        .progress-section {
+            display: none;
+            margin: 16px 0;
+            padding: 12px;
+            background: #f5f7fa;
+            border-radius: 10px;
+        }
+
+        .progress-section.active {
+            display: block;
+        }
+
+        .progress-info {
+            font-size: 13px;
+            line-height: 1.6;
+            color: #333;
+        }
+
+        .progress-bar-wrapper {
+            background: #e0e0e0;
+            height: 4px;
+            border-radius: 2px;
+            overflow: hidden;
+            margin: 8px 0;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50, #66BB6A);
+            border-radius: 2px;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        /* ============ 章节列表 ============ */
+        .chapter-list {
+            max-height: 280px;
+            overflow-y: auto;
+            margin-bottom: 12px;
+            display: none;
+        }
+
+        .chapter-list.active {
+            display: block;
+        }
+
+        .chapter-item {
+            padding: 10px 12px;
+            margin-bottom: 6px;
+            background: #f5f7fa;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #333;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 2px solid transparent;
+        }
+
+        .chapter-item:hover {
+            background: #eff2f7;
+        }
+
+        .chapter-item.selected {
+            background: #2196F3;
+            color: white;
+            border-color: #1976D2;
+        }
+
+        .chapter-list::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        .chapter-list::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 3px;
+        }
+
+        .chapter-list::-webkit-scrollbar-thumb {
+            background: #ccc;
+            border-radius: 3px;
+        }
+
+        .chapter-list::-webkit-scrollbar-thumb:hover {
+            background: #999;
+        }
+
+        /* ============ 按钮组 ============ */
+        .button-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 16px;
+        }
+
+        .button-group-horizontal {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn {
+            padding: 12px 0;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: white;
+            text-align: center;
+            outline: none;
+            flex: 1;
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.2);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            box-shadow: 0 6px 16px rgba(76, 175, 80, 0.3);
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #2196F3, #1976D2);
+            box-shadow: 0 4px 12px rgba(33, 150, 243, 0.2);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            box-shadow: 0 6px 16px rgba(33, 150, 243, 0.3);
+            transform: translateY(-1px);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #f44336, #da190b);
+            box-shadow: 0 4px 12px rgba(244, 67, 54, 0.2);
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            box-shadow: 0 6px 16px rgba(244, 67, 54, 0.3);
+            transform: translateY(-1px);
+        }
+
+        .btn-small {
+            padding: 10px 0;
+            font-size: 13px;
+        }
+
+        /* ============ 状态提示 ============ */
+        .status-badge {
+            display: none;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 12px;
+            width: 100%;
+            text-align: center;
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .status-badge.show {
+            display: block;
+        }
+
+        /* ============ 响应式 ============ */
+        @media (max-width: 480px) {
+            .container {
+                max-width: 100%;
+                padding: 16px;
+            }
+
+            .chapter-title {
+                font-size: 16px;
+            }
+
+            .btn {
+                padding: 11px 0;
+                font-size: 13px;
+            }
+
+            .chapter-list {
+                max-height: 250px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- ========== 单章节模式 ========== -->
+        <div class="chapter-mode active">
+            <div class="chapter-header">
+                <div class="chapter-title">序章</div>
+                <div class="chapter-info">共 50 页</div>
+            </div>
+
+            <!-- 单章进度 -->
+            <div class="progress-section active">
+                <div class="progress-bar-wrapper">
+                    <div class="progress-bar" style="width: 0%"></div>
+                </div>
+                <div class="progress-info">
+                    📥 <span id="singleProgress">0/50</span> 页 | <span id="singlePercent">0%</span>
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button class="btn btn-primary" id="downloadBtn">下载本章节</button>
+                <button class="btn btn-secondary" id="modeBtn">切换长图模式</button>
+                <button class="btn btn-danger" id="cancelSingleBtn" style="display: none;">取消下载</button>
+            </div>
+        </div>
+
+        <!-- ========== 批量下载模式 ========== -->
+        <div class="batch-mode">
+            <div class="batch-header">
+                <span class="batch-title">选择章节</span>
+                <span class="batch-count">已选 0 章</span>
+            </div>
+
+            <!-- 选择模式 -->
+            <div id="selectMode">
+                <div class="chapter-list active">
+                    <div class="chapter-item">序章</div>
+                    <div class="chapter-item">01 最惨穿越者</div>
+                    <div class="chapter-item">02话 反杀</div>
+                    <div class="chapter-item">03 捡了个女巫</div>
+                    <div class="chapter-item">04 水银女士</div>
+                    <div class="chapter-item">05 奇怪的女仆</div>
+                    <div class="chapter-item selected">06 扭转初印象</div>
+                    <div class="chapter-item">07 无冬镇之谜</div>
+                    <div class="chapter-item">08 临时营地</div>
+                    <div class="chapter-item">09 挑战龙女仆</div>
+                </div>
+
+                <div class="button-group">
+                    <div class="button-group-horizontal">
+                        <button class="btn btn-secondary btn-small">全选</button>
+                        <button class="btn btn-secondary btn-small">清除</button>
+                    </div>
+                    <button class="btn btn-primary" id="startDownload">开始下载</button>
+                </div>
+            </div>
+
+            <!-- 下载模式 -->
+            <div id="downloadMode" style="display: none;">
+                <div class="progress-section active">
+                    <div class="progress-bar-wrapper">
+                        <div class="progress-bar" style="width: 0%"></div>
+                    </div>
+                    <div class="progress-info">
+                        <div>📥 第 <span id="currentChapter">1</span>/<span id="totalChapter">10</span> 章</div>
+                        <div>📖 <span id="currentChapterName">序章</span></div>
+                        <div>🖼️ 图片: <span id="imageProgress">0</span>/<span id="totalImages">50</span></div>
+                    </div>
+                </div>
+
+                <div class="button-group">
+                    <button class="btn btn-danger" id="cancelDownload">取消下载</button>
+                </div>
+
+                <div class="status-badge" id="completeStatus">✓ 全部完成</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const batchCount = document.querySelector('.batch-count');
+        const items = document.querySelectorAll('.chapter-item');
+        const startDownloadBtn = document.getElementById('startDownload');
+        const cancelDownloadBtn = document.getElementById('cancelDownload');
+        const selectMode = document.getElementById('selectMode');
+        const downloadMode = document.getElementById('downloadMode');
+        let downloadInterval;
+
+        // 章节选择
+        items.forEach(item => {
+            item.addEventListener('click', function () {
+                this.classList.toggle('selected');
+                const selected = document.querySelectorAll('.chapter-item.selected').length;
+                batchCount.textContent = `已选 ${selected} 章`;
+            });
+        });
+
+        // 开始下载
+        startDownloadBtn.addEventListener('click', () => {
+            selectMode.style.display = 'none';
+            downloadMode.style.display = 'block';
+            simulateDownload();
+        });
+
+        // 取消下载
+        cancelDownloadBtn.addEventListener('click', () => {
+            if (confirm('确定要取消下载吗？')) {
+                clearInterval(downloadInterval);
+                selectMode.style.display = 'block';
+                downloadMode.style.display = 'none';
+            }
+        });
+
+        // 模拟下载
+        function simulateDownload() {
+            let totalProgress = 0;
+            const totalChapters = 10;
+
+            downloadInterval = setInterval(() => {
+                totalProgress += Math.random() * 8;
+
+                if (totalProgress >= 100) {
+                    totalProgress = 100;
+                }
+
+                // 计算当前章节
+                const currentChap = Math.floor((totalProgress / 100) * totalChapters) + 1;
+                const imageCount = Math.floor((totalProgress / 100) * 50);
+
+                // 更新进度条
+                document.querySelector('#downloadMode .progress-bar').style.width = totalProgress + '%';
+                document.getElementById('currentChapter').textContent = Math.min(currentChap, totalChapters);
+                document.getElementById('imageProgress').textContent = imageCount;
+
+                if (totalProgress >= 100) {
+                    clearInterval(downloadInterval);
+                    document.getElementById('completeStatus').classList.add('show');
+                }
+            }, 300);
+        }
+
+        // 单章节下载演示
+        document.getElementById('downloadBtn').addEventListener('click', () => {
+            let progress = 0;
+            const singleInterval = setInterval(() => {
+                progress += Math.random() * 10;
+                if (progress > 100) progress = 100;
+
+                document.querySelector('.chapter-mode .progress-bar').style.width = progress + '%';
+                document.getElementById('singleProgress').textContent = Math.floor((progress / 100) * 50) + '/50';
+                document.getElementById('singlePercent').textContent = Math.floor(progress) + '%';
+
+                if (progress >= 100) {
+                    clearInterval(singleInterval);
+                }
+            }, 200);
+        });
+    </script>
+</body>
+
+</html>
