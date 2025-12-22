@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name         网页漫画下载为pdf格式
 // @namespace    http://tampermonkey.net/
-// @version      3.0.1
+// @version      3.0.2
 // @description  将网页漫画下载为pdf方便阅读，目前仅适用于如漫画(http://www.rumanhua1.com/)、漫蛙库(https://manwaku.cc/)等漫画网站
 // @author       MornLight
 // @match        http://m.rumanhua1.com/*
+// @match        http://m.rumanhua2.com/*
 // @match        http://www.rumanhua1.com/*
+// @match        http://www.rumanhua2.com/*
 // @match        https://www.rumanhua.org/*
 // @match        https://m.rumanhua.org/*
 // @match        https://mangapark.net/*
@@ -317,13 +319,13 @@
     class RumanhuaAdapter extends SiteAdapter {
         isChapterPage() {
             const url = window.location.href;
-            const chapterPagePattern = /http:\/\/m\.rumanhua1\.com\/[^\/]+\/[^\/]+\.html/;
+            const chapterPagePattern = /http:\/\/m\.rumanhua(1|2)\.com\/[^\/]+\/[^\/]+\.html/;
             return chapterPagePattern.test(url);
         }
 
         isDirectoryPage() {
             const url = window.location.href;
-            const directoryPagePattern = /http:\/\/m\.rumanhua1\.com\/[^\/]+\/?$/;
+            const directoryPagePattern = /http:\/\/m\.rumanhua(1|2)\.com\/[^\/]+\/?$/;
             return directoryPagePattern.test(url);
         }
 
@@ -411,13 +413,14 @@
     class RumanhuaPCAdapter extends SiteAdapter {
         isChapterPage() {
             const url = window.location.href;
-            const chapterPagePattern = /http:\/\/www\.rumanhua1\.com\/[^\/]+\/[^\/]+\.html/;
+            const chapterPagePattern = /http:\/\/www\.rumanhua(1|2)\.com\/[^\/]+\/[^\/]+\.html/;
             return chapterPagePattern.test(url);
         }
 
         isDirectoryPage() {
             const url = window.location.href;
-            return url.includes('www.rumanhua1.com/') && !this.isChapterPage();
+            const directoryPagePattern = /http:\/\/www\.rumanhua(1|2)\.com\/[^\/]+\/?$/;
+            return directoryPagePattern.test(url) && !this.isChapterPage();
         }
 
         async getChapterLinks() {
@@ -1054,9 +1057,9 @@
     function getSiteAdapter() {
         const url = window.location.href;
         switch (true) {
-            case url.includes('http://www.rumanhua1.com/'):
+            case url.includes('http://www.rumanhua1.com/') || url.includes('http://www.rumanhua2.com/'):
                 return new RumanhuaPCAdapter();
-            case url.includes('http://m.rumanhua1.com/'):
+            case url.includes('http://m.rumanhua1.com/') || url.includes('http://m.rumanhua2.com/'):
                 return new RumanhuaAdapter();
             case url.includes('https://www.rumanhua.org/'):
                 return new RumanhuaOrgAdapter();
