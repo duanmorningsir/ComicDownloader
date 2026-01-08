@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         网页漫画下载为pdf格式
 // @namespace    http://tampermonkey.net/
-// @version      3.2.0
+// @version      3.2.1
 // @description  将网页漫画下载为pdf方便阅读，目前仅适用于如漫画(http://www.rumanhua1.com/)、漫蛙库(https://manwaku.cc/)等漫画网站
 // @author       MornLight
 // @match        http://m.rumanhua1.com/*
@@ -17,6 +17,9 @@
 // @match        https://www.mwai.cc/*
 // @match        https://www.mwku.cc/*
 // @match        https://www.mwrr.cc/*
+// @match        https://www.manwaku.com/*
+// @match        https://www.mwbu.cc/*
+// @match        https://www.mwdu.cc/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=greasyfork.org
 // @grant        GM_xmlhttpRequest
 // @grant        GM_openInTab
@@ -884,14 +887,14 @@
         isChapterPage() {
             const url = window.location.href;
             // 匹配 https://www.mwdd.cc/comic/xxxxx/xxxxx 格式
-            const chapterPagePattern = /https?:\/\/(www\.)?(mwdd|mwhh|mhtmh|mwai|mwku|mwrr)\.(cc|org)\/comic\/\d+\/\d+\/?$/;
+            const chapterPagePattern = /https?:\/\/(www\.)?(mwdd|mwhh|mhtmh|mwai|mwku|mwrr|manwaku|mwbu|mwdu)\.(cc|org|com)\/comic\/\d+\/\d+\/?$/;
             return chapterPagePattern.test(url);
         }
 
         isDirectoryPage() {
             const url = window.location.href;
             // 匹配 https://www.mwdd.cc/comic/xxxxx/ 格式（只有漫画ID，没有章节ID）
-            const directoryPagePattern = /https?:\/\/(www\.)?(mwdd|mwhh|mhtmh|mwai|mwku|mwrr)\.(cc|org)\/comic\/\d+\/?$/;
+            const directoryPagePattern = /https?:\/\/(www\.)?(mwdd|mwhh|mhtmh|mwai|mwku|mwrr|manwaku|mwbu|mwdu)\.(cc|org|com)\/comic\/\d+\/?$/;
             return directoryPagePattern.test(url) && !this.isChapterPage();
         }
 
@@ -1095,7 +1098,7 @@
                 return new RumanhuaMobileNewAdapter();
             case url.includes('https://mangapark.net/'):
                 return new MangaparkAdapter();
-            case url.includes('mwdd.cc') || url.includes('mwhh.cc') || url.includes('mhtmh.org') || url.includes('mwai.cc') || url.includes('mwku.cc') || url.includes('mwrr.cc'):
+            case url.includes('mwdd.cc') || url.includes('mwhh.cc') || url.includes('mhtmh.org') || url.includes('mwai.cc') || url.includes('mwku.cc') || url.includes('mwrr.cc') || url.includes('manwaku.com') || url.includes('mwbu.cc') || url.includes('mwdu.cc'):
                 return new ManwakuAdapter();
             default:
                 throw new Error('不支持的页面格式');
@@ -1197,7 +1200,7 @@
                 this.cancelButton.style.display = showCancel ? 'block' : 'none';
                 this.progressContainer.style.display = 'none';
                 this.infoText.style.display = 'block';
-                
+
                 // ✅ 关键：隐藏模式选择器 - 使用 !important 确保生效
                 this.modeSelector.style.setProperty('display', 'none', 'important');
             } else {
@@ -1206,7 +1209,7 @@
                 this.cancelButton.style.display = 'none';
                 this.progressContainer.style.display = 'none';
                 this.infoText.style.display = 'block';
-                
+
                 // ✅ 恢复模式选择器 - 使用 flex 确保正确显示
                 this.modeSelector.style.setProperty('display', 'flex', 'important');
             }
@@ -1330,7 +1333,7 @@
 
             // ============ 屏幕1: 初始屏幕（只显示"选择章节"按钮）============
             this.screen1 = this.createElement('div', { display: 'flex', flexDirection: 'column' });
-            
+
             this.chooseChapterButton = this.createElement('button', {
                 width: '100%',
                 padding: '12px 8px',
@@ -1359,7 +1362,7 @@
 
             // ============ 屏幕2: 选择模式屏幕（topBar + selectButton + 列表）============
             this.screen2 = this.createElement('div', { display: 'none', flexDirection: 'column' });
-            
+
             // topBar（返回按钮 + 模式选择）
             this.topBar = this.createElement('div', {
                 display: 'flex',
@@ -1387,7 +1390,7 @@
                 flexShrink: '0',
             });
             this.backButton.textContent = '←';
-            
+
             this.backButtonHoverEnter = () => {
                 if (!this.isDownloading) {
                     this.backButton.style.backgroundColor = '#e0e0e0';
@@ -1528,7 +1531,7 @@
         // ============ 屏幕切换方法 ============
         switchScreen(screenName) {
             console.log(`切换到屏幕: ${screenName}`);
-            
+
             // 隐藏所有屏幕
             this.screen1.style.display = 'none';
             this.screen2.style.display = 'none';
@@ -1555,10 +1558,10 @@
             console.log('用户取消批量下载');
             GM_setValue('cancelBatchDownload', true);
             this.isDownloading = false;
-            
+
             // 切换回选择模式屏幕
             this.switchScreen('selection');
-            
+
             // 恢复下载按钮的样式
             this.selectButton.disabled = false;
             this.selectButton.style.backgroundColor = '#4CAF50';
@@ -1891,10 +1894,10 @@
             if (isLoading) {
                 // 切换到下载屏幕
                 this.switchScreen('downloading');
-                
+
                 // 清空进度信息
                 this.progressInfoContainer.innerHTML = '';
-                
+
                 // 创建进度信息元素
                 this.chapterProgressText = this.createElement('div', {
                     fontSize: '14px',
@@ -1933,7 +1936,7 @@
             } else {
                 // 恢复为选择模式
                 this.switchScreen('selection');
-                
+
                 // 清空进度信息
                 if (this.progressInfoContainer) {
                     this.progressInfoContainer.innerHTML = '';
@@ -2977,11 +2980,11 @@
                     totalProcessed++;
                     const pdfProgress = totalProcessed;
                     const totalImages = validIndices.length;
-                    
+
                     // ✅ 使用GM_setValue存储PDF进度，供startProgressSync读取
                     GM_setValue('currentPDFPage', pdfProgress);
                     GM_setValue('totalPDFPages', totalImages);
-                    
+
                     if (this.ui && this.ui.infoText) {
                         this.ui.infoText.textContent = `📄 正在生成PDF... ${pdfProgress}/${totalImages}`;
                     }

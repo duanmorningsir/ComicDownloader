@@ -83,4 +83,4 @@
 
 ### 赞赏
 如果觉得本插件对你有帮助，欢迎请我喝杯咖啡~ ☕️
-<img src="assets/wechatpay.png" alt="微信支付" width="300" />
+![wechatpay.png](https://s2.loli.net/2026/01/04/cLQf5v9ah7pdGoj.png)
