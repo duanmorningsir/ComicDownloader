@@ -2,6 +2,8 @@
 
 适用于[如漫画网站](http://www.rumanhua1.com/)、[漫蛙库](https://manwaku.cc/)等的漫画离线下载油猴插件。插件下载地址：[下载](https://greasyfork.org/zh-CN/scripts/517511-%E7%BD%91%E9%A1%B5%E6%BC%AB%E7%94%BB%E4%B8%8B%E8%BD%BD%E4%B8%BApdf%E6%A0%BC%E5%BC%8F)
 
+如遇文档图片无法加载，请在GitHub仓库中查看：[README](https://github.com/duanmorningsir/ComicDownloader/blob/main/README.md)
+
 ### 功能介绍
 
 这是一个专为漫画爱好者设计的油猴脚本插件，可以将网页漫画一键下载为PDF格式，方便在各种设备上离线阅读。目前支持如漫画系列网站，未来将根据用户需求适配更多平台。您可以在[github仓库](https://github.com/duanmorningsir/ComicDownloader)中提交适配请求或反馈问题。
@@ -10,14 +12,14 @@
 
 #### 目前适配网站：
 
-|        网站名        |           网址            | 是否适配 |      备注      |
+|        网站名        |           网址           | 是否适配 |      备注      |
 | :------------------: | :-----------------------: | :------: | :------------: |
-|   如漫画（电脑端）   | http://www.rumanhua1.com/ |    ✅     |     速度快     |
-|   如漫画（手机端）   |  http://m.rumanhua1.com/  |    ✅     |  同上，手机UI  |
-| 如漫画备用（电脑端） | https://www.rumanhua.org/ |    ✅     |     速度慢     |
-| 如漫画备用（手机端） |  https://m.rumanhua.org/  |    ✅     |  同上，手机UI  |
-|        漫蛙库        |    https://manwaku.cc/    |    ✅     | 韩漫/成人向/TL |
-|      mangapark       |  https://mangapark.net/   |    ✅     |      韩漫      |
+|   如漫画（电脑端）   | http://www.rumanhua1.com/ |    ✅    |     速度快     |
+|   如漫画（手机端）   |  http://m.rumanhua1.com/  |    ✅    |  同上，手机UI  |
+| 如漫画备用（电脑端） | https://www.rumanhua.org/ |    ✅    |     速度慢     |
+| 如漫画备用（手机端） |  https://m.rumanhua.org/  |    ✅    |  同上，手机UI  |
+|        漫蛙库        |    https://manwaku.cc/    |    ✅    | 韩漫/成人向/TL |
+|      mangapark      |  https://mangapark.net/  |    ✅    |      韩漫      |
 
 ### 使用指南
 
@@ -60,6 +62,8 @@
 
 切换方式：在下载界面点击下拉栏，选择合适的模式即可。
 
+
+
 ### 免责声明
 
 本插件仅用于个人学习和技术研究目的。用户应自行承担使用本插件的所有风险和责任。请注意以下几点：
@@ -82,5 +86,6 @@
 - [QQ频道](https://github.com/user-attachments/assets/e30d6270-8448-4c61-97f9-e3ff12b37cf2)
 
 ### 赞赏
+
 如果觉得本插件对你有帮助，欢迎请我喝杯咖啡~ ☕️
 ![wechatpay.png](https://s2.loli.net/2026/01/04/cLQf5v9ah7pdGoj.png)

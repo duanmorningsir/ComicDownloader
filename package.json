@@ -1,0 +1,15 @@
+{
+  "name": "comic-downloader",
+  "version": "3.2.1",
+  "private": true,
+  "description": "Tampermonkey comic downloader userscript with build pipeline",
+  "devDependencies": {
+    "esbuild": "^0.25.9"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs prod",
+    "build:dev": "node scripts/build.mjs dev",
+    "watch": "node scripts/build.mjs dev --watch",
+    "check": "node scripts/build.mjs prod --check && node scripts/build.mjs dev --check"
+  }
+}

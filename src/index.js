@@ -1,40 +1,142 @@
-// ==UserScript==
-// @name         网页漫画下载为pdf格式
-// @namespace    http://tampermonkey.net/
-// @version      3.2.1
-// @description  将网页漫画下载为pdf方便阅读，目前仅适用于如漫画(http://www.rumanhua1.com/)、漫蛙库(https://manwaku.cc/)等漫画网站
-// @author       MornLight
-// @match        http://m.rumanhua1.com/*
-// @match        http://m.rumanhua2.com/*
-// @match        http://www.rumanhua1.com/*
-// @match        http://www.rumanhua2.com/*
-// @match        https://www.rumanhua.org/*
-// @match        https://m.rumanhua.org/*
-// @match        https://mangapark.net/*
-// @match        https://www.mwdd.cc/*
-// @match        https://www.mwhh.cc/*
-// @match        https://www.mhtmh.org/*
-// @match        https://www.mwai.cc/*
-// @match        https://www.mwku.cc/*
-// @match        https://www.mwrr.cc/*
-// @match        https://www.manwaku.com/*
-// @match        https://www.mwbu.cc/*
-// @match        https://www.mwdu.cc/*
-// @icon         https://www.google.com/s2/favicons?sz=64&domain=greasyfork.org
-// @grant        GM_xmlhttpRequest
-// @grant        GM_openInTab
-// @grant        GM_setValue
-// @grant        GM_getValue
-// @connect      *
-// @require      https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js
-// @run-at       document-end
-// @license      MIT
-// @supportURL   https://github.com/duanmorningsir/ComicDownloader
-// ==/UserScript==
-
+import { BUILD_INFO } from './build-constants.js';
+import { logger } from './logger.js';
+import {
+    DOWNLOAD_PHASE,
+    createDebugSnapshot,
+    ensureRuntimeState,
+    getBatchState,
+    getSessionState,
+    resetSessionState,
+    setSessionPhase,
+    updateBatchState,
+    updateSessionState
+} from './state.js';
 
 (function () {
     'use strict';
+    const RUNTIME_KEY_MAP = {
+        cancelBatchDownload: {
+            get: () => getBatchState().cancelRequested,
+            set: (value) => updateBatchState({ cancelRequested: !!value })
+        },
+        currentChapterName: {
+            get: () => getSessionState().chapterName,
+            set: (value) => updateSessionState({ chapterName: value || '' })
+        },
+        currentImage: {
+            get: () => getSessionState().currentImage,
+            set: (value) => updateSessionState({ currentImage: Number(value) || 0 })
+        },
+        totalImages: {
+            get: () => getSessionState().totalImages,
+            set: (value) => updateSessionState({ totalImages: Number(value) || 0 })
+        },
+        currentPDFPage: {
+            get: () => getSessionState().currentPDFPage,
+            set: (value) => updateSessionState({ currentPDFPage: Number(value) || 0 })
+        },
+        totalPDFPages: {
+            get: () => getSessionState().totalPDFPages,
+            set: (value) => updateSessionState({ totalPDFPages: Number(value) || 0 })
+        },
+        sessionId: {
+            get: () => getBatchState().sessionId,
+            set: (value) => {
+                const nextValue = value || '';
+                updateBatchState({ sessionId: nextValue });
+                updateSessionState({ sessionId: nextValue });
+            }
+        },
+        autoDownload: {
+            get: () => getBatchState().autoDownload,
+            set: (value) => updateBatchState({ autoDownload: !!value })
+        },
+        isBatchDownload: {
+            get: () => getBatchState().enabled,
+            set: (value) => updateBatchState({ enabled: !!value })
+        },
+        pdfMode: {
+            get: () => getBatchState().pdfMode,
+            set: (value) => updateBatchState({ pdfMode: value || 'longpage' })
+        },
+        downloadStatus: {
+            get: () => getSessionState().phase,
+            set: (value) => {
+                const legacyPhaseMap = {
+                    pending: DOWNLOAD_PHASE.PENDING,
+                    downloading: DOWNLOAD_PHASE.DOWNLOADING,
+                    complete: DOWNLOAD_PHASE.DOWNLOADED,
+                    failed: DOWNLOAD_PHASE.FAILED,
+                    cancelled: DOWNLOAD_PHASE.CANCELLED
+                };
+                const phase = Object.values(DOWNLOAD_PHASE).includes(value)
+                    ? value
+                    : (legacyPhaseMap[value] || DOWNLOAD_PHASE.IDLE);
+                setSessionPhase(phase);
+            }
+        },
+        pdfGenerationComplete: {
+            get: () => getSessionState().phase === DOWNLOAD_PHASE.SAVED,
+            set: (value) => {
+                if (value) {
+                    setSessionPhase(DOWNLOAD_PHASE.SAVED);
+                }
+            }
+        },
+        lastImageCount: {
+            get: () => getSessionState().currentImage,
+            set: () => {
+                return;
+            }
+        }
+    };
+
+    const nativeGMGetValue = globalThis.GM_getValue.bind(globalThis);
+    const nativeGMSetValue = globalThis.GM_setValue.bind(globalThis);
+
+    function gmGetValue(key, defaultValue) {
+        const mapping = RUNTIME_KEY_MAP[key];
+        if (mapping) {
+            const value = mapping.get();
+            return value === undefined ? defaultValue : value;
+        }
+        return nativeGMGetValue(key, defaultValue);
+    }
+
+    function gmSetValue(key, value) {
+        const mapping = RUNTIME_KEY_MAP[key];
+        if (mapping) {
+            mapping.set(value);
+            return value;
+        }
+        return nativeGMSetValue(key, value);
+    }
+
+    ensureRuntimeState();
+
+    function exposeDebugState() {
+        if (!BUILD_INFO.isDev) {
+            return;
+        }
+        Object.defineProperty(window, '__comicDownloaderDebug', {
+            configurable: true,
+            enumerable: false,
+            get() {
+                const snapshot = createDebugSnapshot();
+                return Object.freeze({
+                    build: BUILD_INFO,
+                    runtime: snapshot,
+                    getAdapterName: () => window.comicDownloader?.adapter?.constructor?.name || null,
+                    getUiMode: () => ({
+                        pdfMode: window.comicDownloader?.ui?.pdfMode || null,
+                        isDownloading: !!window.comicDownloader?.isDownloading
+                    })
+                });
+            }
+        });
+    }
+
+    exposeDebugState();
     // 禁用图片加载的功能
     function disableImageLoading() {
         console.log('🚫 批量下载模式：禁用图片实际加载');
@@ -103,7 +205,6 @@
             fontWeight: 'bold',
             fontSize: '15px',
             letterSpacing: '0.5px',
-            transition: 'background 0.2s, box-shadow 0.15s, transform 0.08s',
             margin: '4px 0',
             outline: 'none',
             width: '100%',
@@ -1556,7 +1657,7 @@
 
         cancelDownload() {
             console.log('用户取消批量下载');
-            GM_setValue('cancelBatchDownload', true);
+            gmSetValue('cancelBatchDownload', true);
             this.isDownloading = false;
 
             // 切换回选择模式屏幕
@@ -1955,13 +2056,13 @@
 
             this.progressSyncInterval = setInterval(() => {
                 try {
-                    const currentChapter = GM_getValue('currentChapterName', '');
-                    const currentImage = GM_getValue('currentImage', 0);
-                    const totalImages = GM_getValue('totalImages', 0);
-                    const downloadStatus = GM_getValue('downloadStatus', '');
-                    const pdfGenerationComplete = GM_getValue('pdfGenerationComplete', false);
-                    const currentPDFPage = GM_getValue('currentPDFPage', 0);
-                    const totalPDFPages = GM_getValue('totalPDFPages', 0);
+                    const currentChapter = gmGetValue('currentChapterName', '');
+                    const currentImage = gmGetValue('currentImage', 0);
+                    const totalImages = gmGetValue('totalImages', 0);
+                    const downloadStatus = gmGetValue('downloadStatus', '');
+                    const pdfGenerationComplete = gmGetValue('pdfGenerationComplete', false);
+                    const currentPDFPage = gmGetValue('currentPDFPage', 0);
+                    const totalPDFPages = gmGetValue('totalPDFPages', 0);
 
                     // ✅ 从按钮文本中提取章节进度（如果已设置）
                     const buttonText = this.selectButton.textContent;
@@ -2064,9 +2165,11 @@
             try {
                 console.log('开始创建ComicDownloader实例...');
                 this.adapter = getSiteAdapter();
-                this.pdfMode = GM_getValue('pdfMode', 'normal'); // 读取保存的模式
+                this.pdfMode = gmGetValue('pdfMode', 'longpage');
                 this.isDownloading = false;
                 this.abortController = null;
+                this.activeRequests = new Set();
+                this.downloadConcurrency = 4;
                 this.ui = null;
                 this.initPromise = null;
 
@@ -2103,6 +2206,78 @@
             }
         }
 
+        registerRequestHandle(handle) {
+            if (!handle || typeof handle.abort !== 'function') {
+                return () => { };
+            }
+            this.activeRequests.add(handle);
+            return () => {
+                this.activeRequests.delete(handle);
+            };
+        }
+
+        abortActiveRequests() {
+            for (const handle of Array.from(this.activeRequests)) {
+                try {
+                    handle.abort();
+                } catch (error) {
+                    logger.warn('终止图片请求失败', error);
+                }
+            }
+            this.activeRequests.clear();
+        }
+
+        isAbortError(error) {
+            return error?.name === 'AbortError' || error?.message === 'AbortError';
+        }
+
+        assertNotAborted() {
+            if (this.abortController?.signal.aborted) {
+                throw new Error('AbortError');
+            }
+        }
+
+        updateImageProgress(current, total) {
+            gmSetValue('currentImage', current);
+            if (typeof total === 'number' && total > 0) {
+                gmSetValue('totalImages', total);
+            }
+            if (this.ui?.infoText && total > 0) {
+                this.ui.infoText.textContent = `📥 下载中... ${current}/${total}`;
+                this.ui.infoText.style.color = '#2196F3';
+            }
+        }
+
+        updatePdfProgress(current, total) {
+            gmSetValue('currentPDFPage', current);
+            gmSetValue('totalPDFPages', total);
+            if (this.ui?.infoText && total > 0) {
+                this.ui.infoText.textContent = `📄 正在生成PDF... ${current}/${total}`;
+                this.ui.infoText.style.color = '#FF9800';
+            }
+        }
+
+        async runWithConcurrency(taskFactories, concurrency) {
+            const queue = taskFactories.slice();
+            const workers = [];
+            const workerCount = Math.min(concurrency, queue.length || 1);
+
+            for (let workerIndex = 0; workerIndex < workerCount; workerIndex++) {
+                workers.push((async () => {
+                    while (queue.length > 0) {
+                        this.assertNotAborted();
+                        const nextTask = queue.shift();
+                        if (!nextTask) {
+                            return;
+                        }
+                        await nextTask();
+                    }
+                })());
+            }
+
+            await Promise.all(workers);
+        }
+
         // 在 ComicDownloader 类中，修改 waitForImagesAndInit 方法：
 
         async waitForImagesAndInit() {
@@ -2113,7 +2288,7 @@
             console.log('开始等待图片元素加载...');
 
             // 检查是否是批量下载模式
-            const isBatchMode = GM_getValue('autoDownload', false);
+            const isBatchMode = gmGetValue('autoDownload', false);
 
             while (attempts < maxAttempts) {
                 imageElements = this.adapter.getImageElements();
@@ -2184,9 +2359,16 @@
             try {
                 this.isDownloading = true;
                 this.abortController = new AbortController();
+                this.activeRequests.clear();
                 this.ui.setLoading(true, true);
-                // 从UI获取当前选中的模式
-                this.pdfMode = this.ui.pdfMode || 'normal';
+                this.pdfMode = this.ui.pdfMode || 'longpage';
+                updateBatchState({ pdfMode: this.pdfMode });
+                resetSessionState({
+                    sessionId: getBatchState().sessionId || '',
+                    chapterName: this.chapterName,
+                    totalImages: this.totalPages,
+                    phase: DOWNLOAD_PHASE.PENDING
+                });
 
                 console.log('开始下载漫画...');
                 await this.downloadComic();
@@ -2207,7 +2389,8 @@
                 }, 3000);
 
             } catch (error) {
-                if (error.name === 'AbortError' || error.message === 'AbortError') {
+                if (this.isAbortError(error)) {
+                    setSessionPhase(DOWNLOAD_PHASE.CANCELLED);
                     console.log('下载已被用户取消');
                     this.ui.infoText.textContent = '下载已取消';
                     this.ui.infoText.style.display = 'block';
@@ -2218,6 +2401,9 @@
                         this.ui.infoText.style.color = '#4a5568';
                     }, 2000);
                 } else {
+                    setSessionPhase(DOWNLOAD_PHASE.FAILED, {
+                        errorMessage: error?.message || '下载失败'
+                    });
                     this.handleError(error, '下载失败');
                     this.ui.infoText.textContent = '❌ 下载失败,请重试';
                     this.ui.infoText.style.display = 'block';
@@ -2229,6 +2415,7 @@
                     }, 3000);
                 }
             } finally {
+                this.abortActiveRequests();
                 this.isDownloading = false;
                 this.abortController = null;
                 this.ui.setLoading(false, false);
@@ -2244,6 +2431,8 @@
             if (this.abortController) {
                 console.log('用户点击取消下载');
                 this.abortController.abort();
+                this.abortActiveRequests();
+                setSessionPhase(DOWNLOAD_PHASE.CANCELLED);
                 this.isDownloading = false;
                 this.ui.setLoading(false, false);
 
@@ -2266,6 +2455,14 @@
             this.ui.infoText.textContent = '📥 下载中...';
             this.ui.infoText.style.display = 'block';
             this.ui.infoText.style.color = '#2196F3';
+            setSessionPhase(DOWNLOAD_PHASE.DOWNLOADING, {
+                chapterName: this.chapterName,
+                currentImage: 0,
+                totalImages: 0,
+                currentPDFPage: 0,
+                totalPDFPages: 0,
+                errorMessage: ''
+            });
 
             let allImages = [];
 
@@ -2309,19 +2506,18 @@
 
                 console.log(`✓ 所有分页URL收集完成，共 ${allImageUrls.length} 张图片`);
 
-                // ✅ 统一下载所有图片
-                GM_setValue('totalImages', allImageUrls.length);
+                gmSetValue('totalImages', allImageUrls.length);
                 allImages = await this.downloadImagesFromUrls(allImageUrls);
 
             } else {
-                // 单页章节，正常下载
                 allImages = await this.downloadImages(1, this.totalPages);
             }
 
             console.log('所有图片下载完成，开始生成PDF...');
-
-            GM_setValue('downloadStatus', 'complete');
-            console.log('✓ 已设置 downloadStatus 为 complete');
+            setSessionPhase(DOWNLOAD_PHASE.DOWNLOADED, {
+                currentImage: allImages.length,
+                totalImages: allImages.length
+            });
 
             this.ui.infoText.textContent = '📄 正在生成PDF...';
             this.ui.infoText.style.color = '#FF9800';
@@ -2330,170 +2526,92 @@
         }
         async downloadImagesFromUrls(imageUrls) {
             console.log(`开始下载 ${imageUrls.length} 张图片`);
-            const downloadResults = new Array(imageUrls.length);
-            const downloadPromises = [];
+            gmSetValue('totalImages', imageUrls.length);
 
-            for (let i = 0; i < imageUrls.length; i++) {
-                // 检查是否被取消
-                if (this.abortController && this.abortController.signal.aborted) {
-                    console.log('检测到取消信号，停止添加新的下载任务');
-                    break;
+            const downloadResults = new Array(imageUrls.length).fill(null);
+            let completedCount = 0;
+            const tasks = imageUrls.map((imgUrl, index) => async () => {
+                this.assertNotAborted();
+                const pageNumber = index + 1;
+
+                try {
+                    downloadResults[index] = await this.downloadImage(imgUrl);
+                    completedCount += 1;
+                    this.updateImageProgress(completedCount, imageUrls.length);
+                    logger.debug(`第 ${pageNumber} 张下载完成`);
+                } catch (error) {
+                    if (this.isAbortError(error)) {
+                        throw error;
+                    }
+                    completedCount += 1;
+                    this.updateImageProgress(completedCount, imageUrls.length);
+                    logger.warn(`第 ${pageNumber} 张下载失败，已跳过`, error);
                 }
+            });
 
-                const imgUrl = imageUrls[i];
-                const pageNumber = i + 1;
-
-                console.log(`添加第 ${pageNumber} 张图片下载任务: ${imgUrl}`);
-
-                downloadPromises.push(
-                    this.downloadImage(imgUrl)
-                        .then(imgData => {
-                            if (this.abortController && this.abortController.signal.aborted) {
-                                console.log(`第 ${pageNumber} 张已下载但被标记为取消`);
-                                return;
-                            }
-
-                            downloadResults[i] = imgData;
-                            this.ui.infoText.textContent = `📥 下载中... ${pageNumber}/${imageUrls.length}`;
-                            this.ui.infoText.style.color = '#2196F3';
-
-                            GM_setValue('currentImage', pageNumber);
-                            console.log(`第 ${pageNumber} 张下载完成`);
-                        })
-                        .catch(error => {
-                            if (error.message === 'AbortError') {
-                                console.log(`第 ${pageNumber} 张下载被取消`);
-                            } else {
-                                console.error(`第 ${pageNumber} 张下载失败:`, error);
-                            }
-
-                            downloadResults[i] = null;
-                            GM_setValue('currentImage', pageNumber);
-                        })
-                );
-            }
-
-            console.log(`总共需要下载 ${downloadPromises.length} 张图片`);
-
-            try {
-                const results = await Promise.allSettled(downloadPromises);
-
-                const cancelledCount = results.filter(r =>
-                    r.status === 'rejected' && r.reason?.message === 'AbortError'
-                ).length;
-
-                if (cancelledCount > 0) {
-                    console.log(`${cancelledCount} 个下载任务被取消`);
-                    throw new Error('AbortError');
-                }
-
-                console.log('所有图片下载任务已完成');
-                return downloadResults.filter(img => img !== null);
-            } catch (error) {
-                if (error.message === 'AbortError') {
-                    console.log('下载被用户取消');
-                    throw error;
-                }
-                throw error;
-            }
+            await this.runWithConcurrency(tasks, this.downloadConcurrency);
+            return downloadResults.filter((img) => Boolean(img));
         }
 
         async downloadImages(start, end) {
             console.log(`开始下载图片 ${start} 到 ${end}`);
-            const imageElements = this.adapter.getImageElements();
-            const downloadResults = new Array(end - start + 1);
-            const downloadPromises = [];
+            const imageElements = Array.from(this.adapter.getImageElements())
+                .map((element, index) => ({
+                    element,
+                    pageNumber: index + 1
+                }))
+                .filter((item) => item.pageNumber >= start && item.pageNumber <= end);
 
-            // 存储总图片数,供目录页面读取
-            GM_setValue('totalImages', end - start + 1);
+            gmSetValue('totalImages', imageElements.length);
 
-            for (let i = 0; i < imageElements.length; i++) {
-                const pageNumber = i + 1;
-                if (pageNumber >= start && pageNumber <= end) {
-                    // ✅ 在添加promise前检查是否被取消
-                    if (this.abortController && this.abortController.signal.aborted) {
-                        console.log('检测到取消信号，停止添加新的下载任务');
-                        break;
+            const downloadResults = new Array(imageElements.length).fill(null);
+            let completedCount = 0;
+            const tasks = imageElements.map((item, index) => async () => {
+                const imgUrl = this.adapter.getImageUrl(item.element);
+                if (!imgUrl) {
+                    completedCount += 1;
+                    this.updateImageProgress(completedCount, imageElements.length);
+                    logger.warn(`第 ${item.pageNumber} 页图片URL无效，已跳过`);
+                    return;
+                }
+
+                try {
+                    downloadResults[index] = await this.downloadImage(imgUrl);
+                    completedCount += 1;
+                    this.updateImageProgress(completedCount, imageElements.length);
+                } catch (error) {
+                    if (this.isAbortError(error)) {
+                        throw error;
                     }
-
-                    this.addDownloadPromise(imageElements[i], pageNumber, start, downloadResults, downloadPromises);
+                    completedCount += 1;
+                    this.updateImageProgress(completedCount, imageElements.length);
+                    logger.warn(`第 ${item.pageNumber} 页下载失败，已跳过`, error);
                 }
-            }
+            });
 
-            console.log(`总共需要下载 ${downloadPromises.length} 张图片`);
-
-            try {
-                // ✅ 使用 Promise.allSettled 替代 Promise.all，这样不会因为一个失败而全部中止
-                const results = await Promise.allSettled(downloadPromises);
-
-                // 检查是否有被取消的请求
-                const cancelledCount = results.filter(r =>
-                    r.status === 'rejected' && r.reason?.message === 'AbortError'
-                ).length;
-
-                if (cancelledCount > 0) {
-                    console.log(`${cancelledCount} 个下载任务被取消`);
-                    throw new Error('AbortError');
-                }
-
-                console.log('所有图片下载任务已完成');
-                return downloadResults;
-            } catch (error) {
-                if (error.message === 'AbortError') {
-                    console.log('下载被用户取消');
-                    throw error;
-                }
-                throw error;
-            }
+            await this.runWithConcurrency(tasks, this.downloadConcurrency);
+            return downloadResults.filter((img) => Boolean(img));
         }
 
-        addDownloadPromise(element, pageNumber, start, downloadResults, downloadPromises) {
-            const imgUrl = this.adapter.getImageUrl(element);
-            if (imgUrl) {
-                console.log(`添加第 ${pageNumber} 页图片下载任务: ${imgUrl}`);
-                const arrayIndex = pageNumber - start;
-                downloadPromises.push(
-                    this.downloadImage(imgUrl)
-                        .then(imgData => {
-                            if (this.abortController && this.abortController.signal.aborted) {
-                                console.log(`第 ${pageNumber} 页已下载但被标记为取消`);
-                                return;
-                            }
-
-                            downloadResults[arrayIndex] = imgData;
-                            // ✅ 修改：更新为统一的提示格式
-                            this.ui.infoText.textContent = `📥 下载中... ${pageNumber}/${this.totalPages}`;
-                            this.ui.infoText.style.color = '#2196F3';
-
-                            GM_setValue('currentImage', pageNumber);
-                            console.log(`第 ${pageNumber} 页下载完成`);
-                        })
-                        .catch(error => {
-                            if (error.message === 'AbortError') {
-                                console.log(`第 ${pageNumber} 页下载被取消`);
-                            } else {
-                                console.error(`第 ${pageNumber} 页下载失败:`, error);
-                            }
-
-                            downloadResults[arrayIndex] = null;
-                            GM_setValue('currentImage', pageNumber);
-                        })
-                );
-            } else {
-                console.warn(`第 ${pageNumber} 页图片URL无效`);
-            }
-        }
         downloadImage(imgUrl) {
             return new Promise((resolve, reject) => {
-                // 检查是否被取消
-                if (this.abortController && this.abortController.signal.aborted) {
+                if (this.abortController?.signal.aborted) {
                     reject(new Error('AbortError'));
                     return;
                 }
 
                 console.log(`开始下载图片: ${imgUrl}`);
+                let finished = false;
+                const finish = (callback) => (value) => {
+                    if (finished) {
+                        return;
+                    }
+                    finished = true;
+                    unregister();
+                    callback(value);
+                };
 
-                GM_xmlhttpRequest({
+                const requestHandle = GM_xmlhttpRequest({
                     method: 'GET',
                     url: imgUrl,
                     responseType: 'blob',
@@ -2502,28 +2620,29 @@
                         'User-Agent': navigator.userAgent
                     },
                     onload: (response) => {
-                        if (this.abortController && this.abortController.signal.aborted) {
-                            reject(new Error('AbortError'));
+                        if (this.abortController?.signal.aborted) {
+                            finish(reject)(new Error('AbortError'));
                             return;
                         }
 
                         if (response.status === 200) {
-                            this.handleImageResponse(response, resolve, reject);
+                            this.handleImageResponse(response, finish(resolve), finish(reject));
                         } else {
                             console.error(`图片下载失败，状态码: ${response.status}`);
-                            reject(new Error(`HTTP ${response.status}`));
+                            finish(reject)(new Error(`HTTP ${response.status}`));
                         }
                     },
                     onerror: (error) => {
                         console.error('图片下载出错:', error);
-                        reject(error);
+                        finish(reject)(error);
                     },
                     ontimeout: () => {
                         console.error('图片下载超时');
-                        reject(new Error('下载超时'));
+                        finish(reject)(new Error('下载超时'));
                     },
                     timeout: 30000 // 30秒超时
                 });
+                const unregister = this.registerRequestHandle(requestHandle);
             });
         }
 
@@ -2546,32 +2665,49 @@
             this.ui.infoText.style.display = 'block';
             this.ui.infoText.style.color = '#FF9800';
 
+            if (!images.length) {
+                throw new Error('没有有效图片可供生成PDF');
+            }
+
+            setSessionPhase(DOWNLOAD_PHASE.PDF_GENERATING, {
+                currentPDFPage: 0,
+                totalPDFPages: 0
+            });
             const pdf = new jspdf.jsPDF();
             const sizes = await this.getImageSizes(images);
+            const validItems = images
+                .map((imgData, index) => ({
+                    imgData,
+                    size: sizes[index],
+                    index
+                }))
+                .filter((item) => item.size && item.size.width > 0 && item.size.height > 0);
+
+            if (!validItems.length) {
+                throw new Error('没有可用的图片尺寸信息');
+            }
+
+            const validImages = validItems.map((item) => item.imgData);
+            const validSizes = validItems.map((item) => item.size);
             console.log('获取图片尺寸完成');
 
-            // 根据选中的模式调用不同的PDF生成方法
             const mode = this.ui.pdfMode || 'longpage';
             console.log(`使用模式: ${mode}`);
 
             if (mode === 'scroll') {
                 console.log('使用滚动阅读模式生成PDF');
-                await this.generateScrollModePDF(pdf, images, sizes);
+                await this.generateScrollModePDF(pdf, validImages, validSizes);
             } else if (mode === 'longpage') {
                 console.log('使用长图模式生成PDF');
-                await this.generateLongPagePDF(pdf, images, sizes);
+                await this.generateLongPagePDF(pdf, validImages, validSizes);
             } else {
                 console.log('使用翻页模式生成PDF');
-                for (let i = 0; i < images.length; i++) {
-                    await this.addImageToPdf(pdf, images[i], i, sizes[i]);
-
-                    const pdfProgress = i + 1;
-                    const totalPDFPages = images.length;
-                    GM_setValue('currentPDFPage', pdfProgress);
-                    GM_setValue('totalPDFPages', totalPDFPages);
-
-                    this.ui.infoText.textContent = `📄 正在生成PDF... ${pdfProgress}/${totalPDFPages}`;
-                    console.log(`已添加第 ${i + 1} 页到PDF`);
+                for (let i = 0; i < validImages.length; i++) {
+                    const added = await this.addImageToPdf(pdf, validImages[i], i, validSizes[i]);
+                    this.updatePdfProgress(i + 1, validImages.length);
+                    if (added) {
+                        console.log(`已添加第 ${i + 1} 页到PDF`);
+                    }
                 }
             }
 
@@ -2583,12 +2719,15 @@
             await this.savePDFWithWait(`${this.chapterName}.pdf`, pdf);
 
             console.log(`文件保存完成: ${this.chapterName}.pdf`);
-            GM_setValue('pdfGenerationComplete', true);
+            setSessionPhase(DOWNLOAD_PHASE.SAVED, {
+                currentPDFPage: getSessionState().totalPDFPages || validImages.length,
+                totalPDFPages: getSessionState().totalPDFPages || validImages.length
+            });
             console.log('✓ PDF已真正保存，标志已设置');
         }
         // ✅ 新增：确保 PDF 下载完全完成的方法
         async savePDFWithWait(filename, pdf) {
-            return new Promise((resolve) => {
+            return new Promise((resolve, reject) => {
                 try {
                     const pdfBlob = pdf.output('blob');
                     const fileSize = pdfBlob.size;
@@ -2635,7 +2774,7 @@
 
                 } catch (error) {
                     console.error('PDF保存失败:', error);
-                    setTimeout(resolve, 1000);
+                    reject(error);
                 }
             });
         }
@@ -2684,8 +2823,8 @@
 
                     // 更新进度
                     processedImages += currentPageImages.length;
-                    GM_setValue('currentPDFPage', processedImages);
-                    GM_setValue('totalPDFPages', validIndices.length);
+                    gmSetValue('currentPDFPage', processedImages);
+                    gmSetValue('totalPDFPages', validIndices.length);
                     this.ui.infoText.textContent = `📄 正在生成PDF... ${processedImages}/${validIndices.length}`;
 
                     console.log(`✓ 已生成第 ${totalPDFPages} 页PDF (包含 ${currentPageImages.length} 张图片)`);
@@ -2711,8 +2850,8 @@
                 await this.addScrollPageToPDF(pdf, currentPageImages, A4_WIDTH, currentPageHeight);
 
                 processedImages += currentPageImages.length;
-                GM_setValue('currentPDFPage', processedImages);
-                GM_setValue('totalPDFPages', validIndices.length);
+                gmSetValue('currentPDFPage', processedImages);
+                gmSetValue('totalPDFPages', validIndices.length);
 
                 console.log(`✓ 已生成第 ${totalPDFPages} 页PDF (包含 ${currentPageImages.length} 张图片)`);
             }
@@ -2788,11 +2927,38 @@
             }
         }
         async getImageSizes(images) {
-            return Promise.all(images.map(imgData => {
+            return Promise.all(images.map((imgData, index) => {
                 return new Promise(resolve => {
                     const img = new Image();
+                    let settled = false;
+
+                    const cleanup = () => {
+                        img.onload = null;
+                        img.onerror = null;
+                        img.src = '';
+                    };
+
+                    const finish = (value) => {
+                        if (settled) {
+                            return;
+                        }
+                        settled = true;
+                        cleanup();
+                        resolve(value);
+                    };
+
+                    img.onload = () => finish({ width: img.width, height: img.height });
+                    img.onerror = () => {
+                        logger.warn(`第 ${index + 1} 张图片尺寸探测失败，已跳过`);
+                        finish(null);
+                    };
+
+                    setTimeout(() => {
+                        logger.warn(`第 ${index + 1} 张图片尺寸探测超时，已跳过`);
+                        finish(null);
+                    }, 10000);
+
                     img.src = imgData;
-                    img.onload = () => resolve({ width: img.width, height: img.height });
                 });
             }));
         }
@@ -2800,9 +2966,27 @@
         async addImageToPdf(pdf, imgData, index, size) {
             return new Promise(resolve => {
                 const img = new Image();
-                img.src = imgData;
+                let settled = false;
+
+                const cleanup = () => {
+                    img.onload = null;
+                    img.onerror = null;
+                    img.src = '';
+                };
+
+                const finish = (result) => {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    cleanup();
+                    resolve(result);
+                };
+
                 img.onload = () => {
-                    if (index > 0) pdf.addPage();
+                    if (index > 0) {
+                        pdf.addPage();
+                    }
 
                     const A4_width = 210;
                     const A4_height = 297;
@@ -2817,10 +3001,27 @@
 
                     pdf.internal.pageSize.width = finalWidth;
                     pdf.internal.pageSize.height = finalHeight;
-                    pdf.addImage(imgData, 'JPEG', 0, 0, finalWidth, finalHeight);
-                    console.log(`已添加第 ${index + 1} 页到PDF，尺寸: ${finalWidth}x${finalHeight}`);
-                    resolve();
+                    try {
+                        pdf.addImage(imgData, 'JPEG', 0, 0, finalWidth, finalHeight);
+                        console.log(`已添加第 ${index + 1} 页到PDF，尺寸: ${finalWidth}x${finalHeight}`);
+                        finish(true);
+                    } catch (error) {
+                        logger.warn(`第 ${index + 1} 页写入PDF失败，已跳过`, error);
+                        finish(false);
+                    }
                 };
+
+                img.onerror = () => {
+                    logger.warn(`第 ${index + 1} 页图片写入前加载失败，已跳过`);
+                    finish(false);
+                };
+
+                setTimeout(() => {
+                    logger.warn(`第 ${index + 1} 页图片写入前加载超时，已跳过`);
+                    finish(false);
+                }, 10000);
+
+                img.src = imgData;
             });
         }
 
@@ -2982,8 +3183,8 @@
                     const totalImages = validIndices.length;
 
                     // ✅ 使用GM_setValue存储PDF进度，供startProgressSync读取
-                    GM_setValue('currentPDFPage', pdfProgress);
-                    GM_setValue('totalPDFPages', totalImages);
+                    gmSetValue('currentPDFPage', pdfProgress);
+                    gmSetValue('totalPDFPages', totalImages);
 
                     if (this.ui && this.ui.infoText) {
                         this.ui.infoText.textContent = `📄 正在生成PDF... ${pdfProgress}/${totalImages}`;
@@ -3003,6 +3204,98 @@
 
         handleError(error, message = '下载失败') {
             console.error(message, error);
+        }
+
+        beginBatchChapterSession({ sessionId, chapterName, chapterIndex, chapterCount, pdfMode }) {
+            updateBatchState({
+                enabled: true,
+                autoDownload: true,
+                cancelRequested: false,
+                sessionId,
+                pdfMode
+            });
+            resetSessionState({
+                sessionId,
+                phase: DOWNLOAD_PHASE.PENDING,
+                chapterName,
+                chapterIndex,
+                chapterCount,
+                currentImage: 0,
+                totalImages: 0,
+                currentPDFPage: 0,
+                totalPDFPages: 0,
+                errorMessage: ''
+            });
+        }
+
+        clearBatchSessionState() {
+            updateBatchState({
+                autoDownload: false,
+                sessionId: '',
+                cancelRequested: false
+            });
+            resetSessionState();
+        }
+
+        async waitForBatchChapterResult({ chapterIndex, chapterCount, chapterName }) {
+            return new Promise((resolve, reject) => {
+                const startTime = Date.now();
+                const hardTimeoutMs = 10 * 60 * 1000;
+                const pollInterval = 500;
+                let lastImage = -1;
+                let lastPdf = -1;
+
+                const timer = setInterval(() => {
+                    try {
+                        const batchState = getBatchState();
+                        const sessionState = getSessionState();
+
+                        if (batchState.cancelRequested) {
+                            clearInterval(timer);
+                            reject(new Error('用户取消下载'));
+                            return;
+                        }
+
+                        if (sessionState.currentImage !== lastImage || sessionState.currentPDFPage !== lastPdf) {
+                            lastImage = sessionState.currentImage;
+                            lastPdf = sessionState.currentPDFPage;
+                            this.ui.updateProgress(
+                                chapterIndex,
+                                chapterCount,
+                                chapterName,
+                                sessionState.currentImage,
+                                sessionState.totalImages
+                            );
+                        }
+
+                        if (sessionState.phase === DOWNLOAD_PHASE.SAVED) {
+                            clearInterval(timer);
+                            resolve(sessionState);
+                            return;
+                        }
+
+                        if (sessionState.phase === DOWNLOAD_PHASE.FAILED) {
+                            clearInterval(timer);
+                            reject(new Error(sessionState.errorMessage || '章节下载失败'));
+                            return;
+                        }
+
+                        if (sessionState.phase === DOWNLOAD_PHASE.CANCELLED) {
+                            clearInterval(timer);
+                            reject(new Error('用户取消下载'));
+                            return;
+                        }
+
+                        if (Date.now() - startTime > hardTimeoutMs) {
+                            clearInterval(timer);
+                            reject(new Error('紧急超时'));
+                        }
+                    } catch (error) {
+                        clearInterval(timer);
+                        reject(error);
+                    }
+                }, pollInterval);
+            });
         }
 
         // 添加处理选中章节下载的方法
@@ -3027,19 +3320,18 @@
 
                 console.log(`准备批量下载 ${chapterCount} 个章节`);
 
-                // 清除取消标志
-                GM_setValue('cancelBatchDownload', false);
+                updateBatchState({
+                    enabled: true,
+                    autoDownload: false,
+                    cancelRequested: false
+                });
 
                 this.ui.setLoading(true, chapterCount);
-                // 保存当前选中的PDF模式
-                const pdfMode = this.ui.pdfMode || 'normal';
+                const pdfMode = this.ui.pdfMode || 'longpage';
 
                 const batchSessionId = Date.now().toString();
-                GM_setValue('pdfMode', pdfMode);
+                gmSetValue('pdfMode', pdfMode);
                 console.log(`设置PDF模式: ${pdfMode}`);
-
-                // ✅ 设置批量下载标志 - 用于禁用图片加载
-                GM_setValue('isBatchDownload', true);
 
                 console.log(`创建批量下载会话: ${batchSessionId}`);
 
@@ -3051,7 +3343,7 @@
 
                 for (let i = 0; i < selectedChapterUrls.length; i++) {
                     // 检查是否被取消
-                    if (GM_getValue('cancelBatchDownload', false)) {
+                    if (getBatchState().cancelRequested) {
                         console.log('检测到取消标志，停止批量下载');
                         cancelledChapters.push(...selectedChapterUrls.slice(i).map((url, idx) => {
                             return chapterLinks[Array.from(selectedChapters)[i + idx]].name;
@@ -3082,17 +3374,13 @@
                     try {
                         // ✅ 生成唯一的会话ID，避免冲突
                         const sessionId = `${batchSessionId}_${i}`;
-
-                        GM_setValue('autoDownload', true);
-                        GM_setValue('sessionId', sessionId);
-                        GM_setValue('downloadStatus', 'pending');
-                        GM_setValue('currentChapterName', chapterName);
-                        GM_setValue('currentImage', 0);
-                        GM_setValue('totalImages', 0);
-                        // ✅ 新增：重置 PDF 进度值
-                        GM_setValue('currentPDFPage', 0);
-                        GM_setValue('totalPDFPages', 0);
-                        GM_setValue('pdfGenerationComplete', false);
+                        this.beginBatchChapterSession({
+                            sessionId,
+                            chapterName,
+                            chapterIndex: i + 1,
+                            chapterCount,
+                            pdfMode
+                        });
 
                         console.log(`设置下载状态为: pending，会话ID: ${sessionId}`);
                         // ✅ 先关闭上一个标签页，再打开新的
@@ -3114,214 +3402,10 @@
                         });
 
                         console.log(`已打开标签页: ${url}`);
-
-                        // 等待下载完成，同时监听图片下载进度
-                        await new Promise((resolve, reject) => {
-                            const maxWaitTime = 120000; // 图片下载阶段最多等待2分钟
-                            const maxPdfWaitTimeWithoutProgress = 60000; // ✅ 改为：PDF生成无进度时最多等待1分钟
-                            const startTime = Date.now();
-                            let resolved = false;
-                            let hasStartedDownloading = false;
-                            let downloadCompleteTime = null;
-                            let pdfGenerationStartTime = null;
-                            let pdfGenerationCompleteTime = null;
-                            let lastPDFPage = 0; // ✅ 新增：记录上次的PDF页数
-                            let lastPDFProgressTime = Date.now(); // ✅ 新增：记录上次PDF进度更新时间
-
-                            const checkStatus = () => {
-                                if (resolved) return;
-
-                                const currentTimeMs = Date.now();
-                                const elapsedTime = currentTimeMs - startTime;
-
-                                // 检查是否被取消
-                                if (GM_getValue('cancelBatchDownload', false)) {
-                                    resolved = true;
-                                    GM_setValue('downloadStatus', '');
-                                    GM_setValue('currentImage', 0);
-                                    GM_setValue('totalImages', 0);
-                                    GM_setValue('currentPDFPage', 0);
-                                    GM_setValue('totalPDFPages', 0);
-                                    console.log('下载被用户取消');
-                                    reject(new Error('用户取消下载'));
-                                    return;
-                                }
-
-                                const status = GM_getValue('downloadStatus', '');
-                                const currentImage = GM_getValue('currentImage', 0);
-                                const totalImages = GM_getValue('totalImages', 0);
-                                const currentPDFPage = GM_getValue('currentPDFPage', 0);
-                                const totalPDFPages = GM_getValue('totalPDFPages', 0);
-                                const pdfGenerationComplete = GM_getValue('pdfGenerationComplete', false);
-
-                                if (totalImages > 0) {
-                                    hasStartedDownloading = true;
-                                }
-
-                                const lastImageCount = GM_getValue('lastImageCount', 0);
-                                if (totalImages > 0 && currentImage !== lastImageCount) {
-                                    this.ui.updateProgress(i + 1, chapterCount, chapterName, currentImage, totalImages);
-                                    GM_setValue('lastImageCount', currentImage);
-                                }
-
-                                const isDownloadComplete =
-                                    (status === 'complete' && hasStartedDownloading) ||
-                                    (hasStartedDownloading && currentImage >= totalImages && totalImages > 0);
-
-                                if (isDownloadComplete && !downloadCompleteTime) {
-                                    downloadCompleteTime = currentTimeMs;
-                                    console.log(`✓ 第 ${i + 1} 个章节图片下载完成,等待PDF生成...`);
-                                }
-
-                                if (downloadCompleteTime && !pdfGenerationStartTime && currentPDFPage > 0) {
-                                    pdfGenerationStartTime = currentTimeMs;
-                                    lastPDFPage = currentPDFPage;
-                                    lastPDFProgressTime = currentTimeMs;
-                                    console.log(`✓ 检测到 PDF 生成开始`);
-                                }
-
-                                // ✅ 新增：检测PDF生成进度
-                                if (pdfGenerationStartTime && currentPDFPage > lastPDFPage) {
-                                    lastPDFPage = currentPDFPage;
-                                    lastPDFProgressTime = currentTimeMs;
-                                    console.log(`📄 PDF生成进度更新: ${currentPDFPage}/${totalPDFPages}`);
-                                }
-
-                                if (pdfGenerationStartTime && !pdfGenerationCompleteTime && pdfGenerationComplete) {
-                                    pdfGenerationCompleteTime = currentTimeMs;
-                                    console.log(`✓ 检测到 PDF 生成完成`);
-                                }
-
-                                if (pdfGenerationCompleteTime) {
-                                    const waitAfterComplete = currentTimeMs - pdfGenerationCompleteTime;
-
-                                    if (waitAfterComplete >= 5000) {
-                                        resolved = true;
-                                        GM_setValue('downloadStatus', '');
-                                        GM_setValue('currentImage', 0);
-                                        GM_setValue('totalImages', 0);
-                                        GM_setValue('currentPDFPage', 0);
-                                        GM_setValue('totalPDFPages', 0);
-                                        GM_setValue('pdfGenerationComplete', false);
-                                        GM_setValue('lastImageCount', 0);
-                                        console.log(`✓ 第 ${i + 1} 个章节完成: ${chapterName}`);
-                                        resolve();
-                                        return;
-                                    }
-                                } else if (pdfGenerationStartTime) {
-                                    const timeSinceLastProgress = currentTimeMs - lastPDFProgressTime;
-
-                                    // ✅ 改进：如果PDF正在生成且有进度，就继续等待
-                                    if (currentPDFPage > 0 && currentPDFPage < totalPDFPages) {
-                                        // PDF正在生成中，检查是否长时间无进度
-                                        if (timeSinceLastProgress > maxPdfWaitTimeWithoutProgress) {
-                                            console.warn(`⚠️ PDF生成超过${maxPdfWaitTimeWithoutProgress / 1000}秒无进度，当前${currentPDFPage}/${totalPDFPages}`);
-                                            resolved = true;
-                                            GM_setValue('downloadStatus', '');
-                                            GM_setValue('currentImage', 0);
-                                            GM_setValue('totalImages', 0);
-                                            GM_setValue('currentPDFPage', 0);
-                                            GM_setValue('totalPDFPages', 0);
-                                            GM_setValue('pdfGenerationComplete', false);
-                                            GM_setValue('lastImageCount', 0);
-                                            console.log(`⚠️ 第 ${i + 1} 个章节PDF生成超时: ${chapterName}`);
-                                            failedChapters.push(chapterName);
-                                            reject(new Error('PDF生成超时'));
-                                            return;
-                                        }
-                                    } else if (currentPDFPage >= totalPDFPages && totalPDFPages > 0) {
-                                        // ✅ PDF已经生成完所有页，等待保存完成标志
-                                        if (timeSinceLastProgress > 30000) { // 等待30秒保存
-                                            resolved = true;
-                                            GM_setValue('downloadStatus', '');
-                                            GM_setValue('currentImage', 0);
-                                            GM_setValue('totalImages', 0);
-                                            GM_setValue('currentPDFPage', 0);
-                                            GM_setValue('totalPDFPages', 0);
-                                            GM_setValue('pdfGenerationComplete', false);
-                                            GM_setValue('lastImageCount', 0);
-                                            console.log(`✓ 第 ${i + 1} 个章节完成(PDF已生成): ${chapterName}`);
-                                            resolve();
-                                            return;
-                                        }
-                                    }
-                                } else if (downloadCompleteTime) {
-                                    const waitForPdfStart = currentTimeMs - downloadCompleteTime;
-
-                                    // ✅ 增加到60秒，并输出更详细的日志
-                                    if (waitForPdfStart > 60000) {
-                                        console.warn(`⚠️ 图片下载完成已${Math.floor(waitForPdfStart / 1000)}秒，但PDF仍未开始生成`);
-                                        console.warn(`   当前状态: downloadStatus=${GM_getValue('downloadStatus')}`);
-                                        console.warn(`   currentPDFPage=${GM_getValue('currentPDFPage')}, totalPDFPages=${GM_getValue('totalPDFPages')}`);
-
-                                        resolved = true;
-                                        GM_setValue('downloadStatus', '');
-                                        GM_setValue('currentImage', 0);
-                                        GM_setValue('totalImages', 0);
-                                        GM_setValue('currentPDFPage', 0);
-                                        GM_setValue('totalPDFPages', 0);
-                                        GM_setValue('lastImageCount', 0);
-                                        console.warn(`✗ 第 ${i + 1} 个章节超时: ${chapterName}`);
-                                        failedChapters.push(chapterName);
-                                        reject(new Error('PDF生成未开始'));
-                                        return;
-                                    }
-
-                                    // ✅ 添加：每10秒输出一次等待日志
-                                    if (Math.floor(waitForPdfStart / 10000) > Math.floor((waitForPdfStart - 500) / 10000)) {
-                                        console.log(`⏳ 等待PDF生成开始... 已等待${Math.floor(waitForPdfStart / 1000)}秒`);
-                                    }
-                                }
-                                else if (elapsedTime > maxWaitTime) {
-                                    resolved = true;
-                                    GM_setValue('downloadStatus', '');
-                                    GM_setValue('currentImage', 0);
-                                    GM_setValue('totalImages', 0);
-                                    GM_setValue('currentPDFPage', 0);
-                                    GM_setValue('totalPDFPages', 0);
-                                    GM_setValue('lastImageCount', 0);
-                                    console.warn(`✗ 第 ${i + 1} 个章节下载超时: ${chapterName}`);
-                                    failedChapters.push(chapterName);
-                                    reject(new Error('下载超时'));
-                                    return;
-                                }
-                            };
-
-                            const checkInterval = setInterval(() => {
-                                checkStatus();
-                                if (resolved) {
-                                    clearInterval(checkInterval);
-                                }
-                            }, 500);
-
-                            // ✅ 修改：移除固定的总超时时间，依赖各阶段的超时检测
-                            // 仅保留一个非常长的保底超时（10分钟）
-                            const emergencyTimeout = setTimeout(() => {
-                                if (!resolved) {
-                                    resolved = true;
-                                    clearInterval(checkInterval);
-                                    console.warn(`✗ 第 ${i + 1} 个章节紧急超时（10分钟）`);
-                                    reject(new Error('紧急超时'));
-                                }
-                            }, 600000); // 10分钟
-
-                            // 清理函数
-                            const cleanup = () => {
-                                clearInterval(checkInterval);
-                                clearTimeout(emergencyTimeout);
-                            };
-
-                            // 在resolve/reject时清理定时器
-                            const originalResolve = resolve;
-                            const originalReject = reject;
-                            resolve = (...args) => {
-                                cleanup();
-                                originalResolve(...args);
-                            };
-                            reject = (...args) => {
-                                cleanup();
-                                originalReject(...args);
-                            };
+                        await this.waitForBatchChapterResult({
+                            chapterIndex: i + 1,
+                            chapterCount,
+                            chapterName
                         });
 
 
@@ -3345,6 +3429,8 @@
                         failedChapters.push(chapterName);
 
                         await new Promise(resolve => setTimeout(resolve, 500)); // ✅ 改为0.5秒(原来1秒)
+                    } finally {
+                        this.clearBatchSessionState();
                     }
                 }
 
@@ -3359,15 +3445,13 @@
                     }
                 }
 
-                // 清除批量下载标志
-                GM_setValue('isBatchDownload', false);
-                GM_setValue('autoDownload', false);
-                GM_setValue('sessionId', '');
-                GM_setValue('currentChapterName', '');
-                GM_setValue('cancelBatchDownload', false);
-                GM_setValue('downloadStatus', '');
-                GM_setValue('currentPDFPage', 0);
-                GM_setValue('totalPDFPages', 0);
+                updateBatchState({
+                    enabled: false,
+                    autoDownload: false,
+                    sessionId: '',
+                    cancelRequested: false
+                });
+                resetSessionState();
 
 
                 this.ui.setLoading(false);
@@ -3410,11 +3494,13 @@
 
             } catch (error) {
                 console.error('批量下载失败:', error);
-                GM_setValue('autoDownload', false);
-                GM_setValue('sessionId', '');
-                GM_setValue('cancelBatchDownload', false);
-                GM_setValue('downloadStatus', '');
-                GM_setValue('isBatchDownload', false); // ✅ 添加这行
+                updateBatchState({
+                    enabled: false,
+                    autoDownload: false,
+                    sessionId: '',
+                    cancelRequested: false
+                });
+                resetSessionState();
 
 
                 this.ui.setLoading(false);
@@ -3470,8 +3556,8 @@
         addScrollbarStyles();
 
         // ✅ 检查是否是批量下载模式
-        const isBatchDownload = GM_getValue('isBatchDownload', false);
-        const autoDownload = GM_getValue('autoDownload', false);
+        const isBatchDownload = gmGetValue('isBatchDownload', false);
+        const autoDownload = gmGetValue('autoDownload', false);
 
         if (isBatchDownload && autoDownload) {
             console.log('🚫 批量下载模式：禁用图片加载');
@@ -3481,7 +3567,7 @@
         try {
             window.comicDownloader = new ComicDownloader();
 
-            const sessionId = GM_getValue('sessionId', '');
+            const sessionId = gmGetValue('sessionId', '');
             const currentTime = Date.now();
 
             console.log('自动下载标志:', autoDownload);
@@ -3494,7 +3580,7 @@
 
                 console.log('检测到批量下载流程，准备自动下载');
 
-                window.comicDownloader.isScrollMode = GM_getValue('isScrollMode', false);
+                window.comicDownloader.isScrollMode = gmGetValue('isScrollMode', false);
 
                 window.comicDownloader.ensureUIReady().then(() => {
                     // ✅ 增加延迟时间，给页面更多时间初始化
@@ -3503,7 +3589,6 @@
                             console.log('等待页面初始化完成，开始自动下载...');
                             await window.comicDownloader.handleDownload();
                             console.log('自动下载完成');
-                            GM_setValue('downloadStatus', 'complete');
 
                             // 下载完成后恢复图片加载(为下一个章节做准备)
                             if (isBatchDownload) {
@@ -3511,7 +3596,11 @@
                             }
                         } catch (error) {
                             console.error('自动下载失败:', error);
-                            GM_setValue('downloadStatus', 'complete');
+                            if (!window.comicDownloader.isAbortError(error)) {
+                                setSessionPhase(DOWNLOAD_PHASE.FAILED, {
+                                    errorMessage: error?.message || '自动下载失败'
+                                });
+                            }
 
                             if (isBatchDownload) {
                                 enableImageLoading();
@@ -3520,8 +3609,12 @@
                     }, 2000); // ✅ 改为2秒，给页面足够的初始化时间
                 }).catch(error => {
                     console.error('UI初始化失败:', error);
-                    GM_setValue('downloadStatus', 'failed');
-                    GM_setValue('autoDownload', false);
+                    setSessionPhase(DOWNLOAD_PHASE.FAILED, {
+                        errorMessage: error?.message || 'UI初始化失败'
+                    });
+                    updateBatchState({
+                        autoDownload: false
+                    });
 
                     if (isBatchDownload) {
                         enableImageLoading();
@@ -3531,9 +3624,11 @@
             } else {
                 if (autoDownload) {
                     console.log('清除自动下载标志');
-                    GM_setValue('autoDownload', false);
-                    GM_setValue('sessionId', '');
-                    GM_setValue('isBatchDownload', false);
+                    updateBatchState({
+                        autoDownload: false,
+                        sessionId: '',
+                        enabled: false
+                    });
                 }
             }
 
